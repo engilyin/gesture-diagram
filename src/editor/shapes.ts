@@ -13,13 +13,16 @@ export function createRectangle(x: number, y: number, width: number, height: num
 }
 
 export function createLine(x: number, y: number, width: number, height: number): DiagramElement {
+  const connectorWidth = Math.max(width, 12);
+  const connectorHeight = Math.max(height, 12);
+
   return {
     id: crypto.randomUUID(),
     kind: 'line',
     x,
     y,
-    width,
-    height,
-    color: '#0f172a',
+    width: connectorWidth,
+    height: connectorHeight,
+    color: '#111827',
   };
 }
