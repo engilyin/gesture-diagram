@@ -5,12 +5,14 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { GestureFallbackPanel } from "./GestureFallbackPanel";
 import { ContextPalette, type PaletteAction } from "./ContextPalette";
 import { DocumentPersistenceControls } from "./DocumentPersistenceControls";
 import { SelectionHandles } from "./SelectionHandles";
+import { ConnectionPorts } from "./ConnectionPorts";
 import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
 import { getVisibleElements } from "../editor/culling";
 import {
@@ -47,6 +49,7 @@ import {
   getCycledSelectionId,
   nudgeSelectedElements,
 } from "../editor/keyboardNavigation";
+import { resolveElementPorts } from "../editor/ports";
 import { recognizeStroke } from "../editor/recognition";
 import {
   getPrimarySelection,
@@ -120,6 +123,7 @@ export function EditorSurface({
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
+  const [hoveredElementId, setHoveredElementId] = useState<string | null>(null);
   const [marqueeSelection, setMarqueeSelection] =
     useState<MarqueeSelection | null>(null);
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
@@ -163,6 +167,36 @@ export function EditorSurface({
   const selectedElement = useMemo(
     () => elements.find((element) => element.id === selectedId) ?? null,
     [elements, selectedId],
+  );
+
+  const hoveredElement = useMemo(
+    () =>
+      elements.find(
+        (element) =>
+          element.id === hoveredElementId &&
+          element.kind !== "line" &&
+          element.kind !== "ink",
+      ) ?? null,
+    [elements, hoveredElementId],
+  );
+
+  const portSourceElement = useMemo(() => {
+    if (hoveredElement) {
+      return hoveredElement;
+    }
+    if (
+      selectedElement &&
+      selectedElement.kind !== "line" &&
+      selectedElement.kind !== "ink"
+    ) {
+      return selectedElement;
+    }
+    return null;
+  }, [hoveredElement, selectedElement]);
+
+  const hoveredPorts = useMemo(
+    () => (portSourceElement ? resolveElementPorts(portSourceElement) : []),
+    [portSourceElement],
   );
 
   const visibleElements = useMemo(
@@ -292,6 +326,15 @@ export function EditorSurface({
   });
 
   const getLocalPoint = (event: ReactPointerEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const left = Number.isFinite(rect.left) ? rect.left : 0;
+    const top = Number.isFinite(rect.top) ? rect.top : 0;
+    const clientX = Number.isFinite(event.clientX) ? event.clientX : left;
+    const clientY = Number.isFinite(event.clientY) ? event.clientY : top;
+    return { x: clientX - left, y: clientY - top };
+  };
+
+  const getLocalPointFromMouse = (event: ReactMouseEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const left = Number.isFinite(rect.left) ? rect.left : 0;
     const top = Number.isFinite(rect.top) ? rect.top : 0;
@@ -815,6 +858,12 @@ export function EditorSurface({
 
     const local = getLocalPoint(event);
     const world = screenToWorld(local);
+    const hovered = hitTestElement(world);
+    setHoveredElementId(
+      hovered && hovered.kind !== "line" && hovered.kind !== "ink"
+        ? hovered.id
+        : null,
+    );
 
     if (isPanning && dragStartRef.current) {
       const dx = local.x - dragStartRef.current.x;
@@ -927,6 +976,20 @@ export function EditorSurface({
     }
   };
 
+  const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (readOnly) {
+      return;
+    }
+    const local = getLocalPointFromMouse(event);
+    const world = screenToWorld(local);
+    const hovered = hitTestElement(world);
+    setHoveredElementId(
+      hovered && hovered.kind !== "line" && hovered.kind !== "ink"
+        ? hovered.id
+        : null,
+    );
+  };
+
   const handlePointerUp = () => {
     if (readOnly) {
       return;
@@ -937,6 +1000,7 @@ export function EditorSurface({
       setResizeHandle(null);
       setIsPanning(false);
       setSnapGuide(null);
+      setHoveredElementId(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
       return;
@@ -963,6 +1027,7 @@ export function EditorSurface({
       setDragMode(null);
       setIsPanning(false);
       setSnapGuide(null);
+      setHoveredElementId(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
       return;
@@ -985,6 +1050,7 @@ export function EditorSurface({
         setMarqueeSelection(null);
         setDragMode(null);
         setIsPanning(false);
+        setHoveredElementId(null);
         dragStartRef.current = null;
         lastPointerWorldRef.current = null;
         return;
@@ -1014,6 +1080,7 @@ export function EditorSurface({
     setResizeHandle(null);
     setIsPanning(false);
     setSnapGuide(null);
+    setHoveredElementId(null);
     dragStartRef.current = null;
     lastPointerWorldRef.current = null;
   };
@@ -1410,6 +1477,8 @@ export function EditorSurface({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoveredElementId(null)}
         onWheel={handleWheel}
       >
         <div
@@ -1474,6 +1543,7 @@ export function EditorSurface({
           }}
         >
           <div className="grid" aria-hidden="true" />
+          <ConnectionPorts ports={hoveredPorts} />
           {marqueeSelection && (
             <div
               aria-label="Selection marquee"
