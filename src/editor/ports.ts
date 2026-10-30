@@ -23,6 +23,18 @@ const defaultPortOffsetsByKind: Record<
     { id: "bottom", x: 0.5, y: 1 },
     { id: "left", x: 0, y: 0.5 },
   ],
+  ellipse: [
+    { id: "top", x: 0.5, y: 0 },
+    { id: "right", x: 1, y: 0.5 },
+    { id: "bottom", x: 0.5, y: 1 },
+    { id: "left", x: 0, y: 0.5 },
+  ],
+  diamond: [
+    { id: "top", x: 0.5, y: 0 },
+    { id: "right", x: 1, y: 0.5 },
+    { id: "bottom", x: 0.5, y: 1 },
+    { id: "left", x: 0, y: 0.5 },
+  ],
   text: [
     { id: "top", x: 0.5, y: 0 },
     { id: "right", x: 1, y: 0.5 },

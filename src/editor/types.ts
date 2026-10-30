@@ -1,10 +1,11 @@
 export type DiagramElement = {
   id: string;
-  kind: "rect" | "line" | "ink" | "text";
+  kind: "rect" | "ellipse" | "diamond" | "line" | "ink" | "text";
   x: number;
   y: number;
   width: number;
   height: number;
+  text?: string;
   color?: string;
   strokeWidth?: number;
   points?: Point[];

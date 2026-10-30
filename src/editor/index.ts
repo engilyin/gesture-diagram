@@ -17,7 +17,13 @@ export type {
   DocumentChangeDispatcher,
   DocumentChangeSubscriber,
 } from "./document";
-export { createRectangle, createLine } from "./shapes";
+export {
+  createDiamond,
+  createEllipse,
+  createLine,
+  createRectangle,
+  createText,
+} from "./shapes";
 export { recognizeStroke } from "./recognition";
 export {
   CURRENT_SCHEMA_VERSION,

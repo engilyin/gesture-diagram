@@ -36,11 +36,28 @@ export function exportSvg(
       return `<line x1="${element.x}" y1="${element.y}" x2="${element.x + element.width}" y2="${element.y + element.height}" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
     }
 
+    if (element.kind === "ellipse") {
+      return `<ellipse cx="${element.x + element.width / 2}" cy="${element.y + element.height / 2}" rx="${element.width / 2}" ry="${element.height / 2}" fill="rgba(79,70,229,0.12)" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
+    }
+
+    if (element.kind === "diamond") {
+      const top = `${element.x + element.width / 2},${element.y}`;
+      const right = `${element.x + element.width},${element.y + element.height / 2}`;
+      const bottom = `${element.x + element.width / 2},${element.y + element.height}`;
+      const left = `${element.x},${element.y + element.height / 2}`;
+      return `<polygon points="${top} ${right} ${bottom} ${left}" fill="rgba(79,70,229,0.12)" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
+    }
+
     if (element.kind === "ink" && element.points && element.points.length > 1) {
       const points = element.points
         .map((point) => `${point.x},${point.y}`)
         .join(" ");
       return `<polyline points="${escapeXml(points)}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
+    }
+
+    if (element.kind === "text") {
+      const text = escapeXml(element.text ?? "");
+      return `<g><rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" fill="transparent" stroke="${escapeXml(stroke)}" stroke-dasharray="4 3" stroke-width="${Math.max(1, strokeWidth - 1)}" /><text x="${element.x + 8}" y="${element.y + 24}" font-family="Inter, Arial, sans-serif" font-size="16" fill="${escapeXml(stroke)}">${text}</text></g>`;
     }
 
     return `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="8" ry="8" fill="rgba(79,70,229,0.12)" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
