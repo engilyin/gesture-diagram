@@ -33,7 +33,33 @@ function isValidDocument(input: unknown): input is DiagramDocument {
   return (
     typeof candidate.version === 'string' &&
     Array.isArray(candidate.elements) &&
-    candidate.elements.every((element) => isValidElement(element))
+    candidate.elements.every((element) => isValidElement(element)) &&
+    isValidDocumentSettings(candidate.settings)
+  );
+}
+
+function isValidDocumentSettings(
+  input: unknown,
+): input is DiagramDocument["settings"] {
+  if (input == null) {
+    return true;
+  }
+  if (typeof input !== "object") {
+    return false;
+  }
+
+  const candidate = input as NonNullable<DiagramDocument["settings"]>;
+  const canvas = candidate.canvas;
+  const validCanvas =
+    canvas == null ||
+    (typeof canvas === "object" &&
+      (canvas.width == null || typeof canvas.width === "number") &&
+      (canvas.height == null || typeof canvas.height === "number"));
+
+  return (
+    (candidate.title == null || typeof candidate.title === "string") &&
+    (candidate.background == null || typeof candidate.background === "string") &&
+    validCanvas
   );
 }
 

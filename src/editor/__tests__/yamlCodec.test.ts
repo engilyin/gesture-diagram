@@ -10,12 +10,21 @@ describe('yaml codec', () => {
     const rectangle = createRectangle(10, 12, 110, 75);
     const connector = createLine(140, 40, 180, 20);
     document.elements.push(rectangle, connector);
+    document.settings = {
+      title: "Workflow diagram",
+      background: "#f8fafc",
+      canvas: {
+        width: 1920,
+        height: 1080,
+      },
+    };
 
     const yaml = serializeDocument(document, '2026-01-01T00:00:00.000Z');
     const parsed = deserializeDocument(yaml);
 
     expect(parsed.version).toBe(document.version);
     expect(parsed.elements).toEqual(document.elements);
+    expect(parsed.settings).toEqual(document.settings);
     expect(parsed.metadata).toEqual({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       updatedAt: '2026-01-01T00:00:00.000Z',

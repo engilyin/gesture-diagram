@@ -68,6 +68,8 @@ const canvasHeight = 1000;
 const minimapWidth = 200;
 const minimapHeight = 125;
 const fitPadding = 48;
+const defaultDocumentTitle = "Untitled diagram";
+const defaultCanvasBackground = "#ffffff";
 
 type DragMode = "draw" | "move" | "resize" | "marquee" | null;
 type HistorySnapshot = DiagramElement[];
@@ -88,6 +90,17 @@ export function EditorSurface({
   profileId,
   onDocumentChange,
 }: EditorSurfaceProps) {
+  const initialSettings = useMemo(
+    () => ({
+      title: document?.settings?.title ?? defaultDocumentTitle,
+      background: document?.settings?.background ?? defaultCanvasBackground,
+      canvas: {
+        width: document?.settings?.canvas?.width,
+        height: document?.settings?.canvas?.height,
+      },
+    }),
+    [document?.settings?.background, document?.settings?.canvas?.height, document?.settings?.canvas?.width, document?.settings?.title],
+  );
   const [view, setView] = useState<ViewState>(createViewState());
   const [elements, setElements] = useState<DiagramElement[]>(
     document ? [...document.elements] : [],
@@ -102,6 +115,7 @@ export function EditorSurface({
     null,
   );
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [documentSettings, setDocumentSettings] = useState(initialSettings);
   const [surfaceSize, setSurfaceSize] = useState({ width: 1024, height: 768 });
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -522,6 +536,7 @@ export function EditorSurface({
     const nextDocument = createDocumentFromElements(
       elements,
       document?.version ?? "0.1.0",
+      documentSettings,
     );
 
     if (document?.metadata || profileId) {
@@ -535,7 +550,7 @@ export function EditorSurface({
     }
 
     return nextDocument;
-  }, [document?.metadata, document?.version, elements, profileId]);
+  }, [document?.metadata, document?.version, documentSettings, elements, profileId]);
 
   useEffect(() => {
     if (!document) {
@@ -548,6 +563,14 @@ export function EditorSurface({
     }
 
     setElements([...document.elements]);
+    setDocumentSettings({
+      title: document.settings?.title ?? defaultDocumentTitle,
+      background: document.settings?.background ?? defaultCanvasBackground,
+      canvas: {
+        width: document.settings?.canvas?.width,
+        height: document.settings?.canvas?.height,
+      },
+    });
     setSelection(makeSelection());
     resetHistory(document.elements);
   }, [document, elements, resetHistory]);
@@ -568,6 +591,14 @@ export function EditorSurface({
     const loaded = loadDocument(documentPayload);
     const repaired = enforceConnectorInvariants(getDocumentElements(loaded));
     setElements(repaired.repairedElements);
+    setDocumentSettings({
+      title: loaded.settings?.title ?? defaultDocumentTitle,
+      background: loaded.settings?.background ?? defaultCanvasBackground,
+      canvas: {
+        width: loaded.settings?.canvas?.width,
+        height: loaded.settings?.canvas?.height,
+      },
+    });
     setSelection(makeSelection());
     resetHistory(repaired.repairedElements);
   };
@@ -1242,6 +1273,31 @@ export function EditorSurface({
     readOnly,
   ]);
 
+  const handleTitleChange = (value: string) => {
+    setDocumentSettings((current) => ({
+      ...current,
+      title: value,
+    }));
+  };
+
+  const handleBackgroundChange = (value: string) => {
+    setDocumentSettings((current) => ({
+      ...current,
+      background: value || defaultCanvasBackground,
+    }));
+  };
+
+  const handleCanvasHintChange = (axis: "width" | "height", value: string) => {
+    const parsed = Number.parseInt(value, 10);
+    setDocumentSettings((current) => ({
+      ...current,
+      canvas: {
+        ...current.canvas,
+        [axis]: Number.isFinite(parsed) ? parsed : undefined,
+      },
+    }));
+  };
+
   return (
     <div className="editor-shell">
       <div className="toolbar" aria-label="Editor controls">
@@ -1264,6 +1320,48 @@ export function EditorSurface({
           Zoom: {summary.scale.toFixed(2)} | Selected: {summary.selected}
         </span>
       </div>
+      {!readOnly && (
+        <fieldset className="document-settings-panel" aria-label="Document settings">
+          <legend>Document settings</legend>
+          <label>
+            Title
+            <input
+              aria-label="Document title"
+              value={documentSettings.title ?? ""}
+              onChange={(event) => handleTitleChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Background
+            <input
+              aria-label="Document background color"
+              type="color"
+              value={documentSettings.background ?? defaultCanvasBackground}
+              onChange={(event) => handleBackgroundChange(event.target.value)}
+            />
+          </label>
+          <label>
+            Canvas width hint
+            <input
+              aria-label="Canvas width hint"
+              type="number"
+              min={1}
+              value={documentSettings.canvas?.width ?? ""}
+              onChange={(event) => handleCanvasHintChange("width", event.target.value)}
+            />
+          </label>
+          <label>
+            Canvas height hint
+            <input
+              aria-label="Canvas height hint"
+              type="number"
+              min={1}
+              value={documentSettings.canvas?.height ?? ""}
+              onChange={(event) => handleCanvasHintChange("height", event.target.value)}
+            />
+          </label>
+        </fieldset>
+      )}
 
       {!readOnly && (
         <DocumentPersistenceControls
@@ -1370,6 +1468,7 @@ export function EditorSurface({
           style={{
             width: `${canvasWidth}px`,
             height: `${canvasHeight}px`,
+            background: documentSettings.background ?? defaultCanvasBackground,
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
             transformOrigin: "0 0",
           }}
