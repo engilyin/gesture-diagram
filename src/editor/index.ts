@@ -22,3 +22,14 @@ export {
   importDocumentFromFile,
   importDocumentFromText,
 } from './persistence/fileWorkflow';
+export {
+  attachConnectorEndpoints,
+  enforceConnectorInvariants,
+  type ConnectorInvariantResult,
+} from './connectorGraph';
+export {
+  getGroupedSelectionIds,
+  groupElements,
+  moveGroupedElements,
+  ungroupElements,
+} from './grouping';

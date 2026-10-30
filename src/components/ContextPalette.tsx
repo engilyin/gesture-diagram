@@ -1,7 +1,7 @@
 export type PaletteAction = {
   id: string;
   label: string;
-  kind: "convert" | "style" | "duplicate" | "delete";
+  kind: "convert" | "style" | "duplicate" | "delete" | "group" | "ungroup";
   rank: number;
 };
 

@@ -12,11 +12,21 @@ import { DocumentPersistenceControls } from "./DocumentPersistenceControls";
 import { SelectionHandles } from "./SelectionHandles";
 import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
 import {
+  attachConnectorEndpoints,
+  enforceConnectorInvariants,
+} from "../editor/connectorGraph";
+import {
   createDocumentFromElements,
   getDocumentElements,
   loadDocument,
   saveDocument,
 } from "../editor/document";
+import {
+  getGroupedSelectionIds,
+  groupElements,
+  moveGroupedElements,
+  ungroupElements,
+} from "../editor/grouping";
 import { normalizeStroke } from "../editor/input";
 import {
   loadFromBrowserStorage,
@@ -35,7 +45,6 @@ import {
 } from "../editor/selection";
 import { createInk } from "../editor/shapes";
 import {
-  moveElement,
   resizeElement,
   type ResizeHandle,
 } from "../editor/transform";
@@ -89,15 +98,44 @@ export function EditorSurface() {
       return;
     }
 
+    const selectedElements = elements.filter((element) =>
+      selection.ids.includes(element.id),
+    );
+    const canGroup = selection.ids.length > 1;
+    const canUngroup = selectedElements.some((element) => Boolean(element.groupId));
+
     const nextActions: PaletteAction[] = [
       { id: "convert", label: "Convert", kind: "convert", rank: 1 },
       { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 2 },
       { id: "style", label: "Style", kind: "style", rank: 3 },
-      { id: "delete", label: "Delete", kind: "delete", rank: 4 },
+      ...(canGroup
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 4 }]
+        : []),
+      ...(canUngroup
+        ? [
+            {
+              id: "ungroup",
+              label: "Ungroup",
+              kind: "ungroup" as const,
+              rank: 5,
+            },
+          ]
+        : []),
+      { id: "delete", label: "Delete", kind: "delete", rank: 6 },
     ];
 
     setSelectedActions(nextActions);
-  }, [selection]);
+  }, [elements, selection]);
+
+  const applyElementsWithInvariants = (
+    updater: (current: DiagramElement[]) => DiagramElement[],
+  ) => {
+    setElements((current) => {
+      const updated = updater(current);
+      const repaired = enforceConnectorInvariants(updated);
+      return repaired.repairedElements;
+    });
+  };
 
   const screenToWorld = (point: { x: number; y: number }) => ({
     x: (point.x - view.x) / view.scale,
@@ -175,14 +213,38 @@ export function EditorSurface() {
         x: element.x + 24,
         y: element.y + 24,
       };
-      setElements((current) => [...current, duplicate]);
+      applyElementsWithInvariants((current) => [...current, duplicate]);
       setSelection(makeSelection([duplicate.id]));
       return;
     }
 
+    if (action.kind === "group" && selection.ids.length > 1) {
+      const groupId = crypto.randomUUID();
+      applyElementsWithInvariants((current) =>
+        groupElements(current, selection.ids, groupId),
+      );
+      return;
+    }
+
+    if (action.kind === "ungroup") {
+      const selectedElements = elements.filter((element) =>
+        selection.ids.includes(element.id),
+      );
+      const groupId = selectedElements.find((element) => element.groupId)?.groupId;
+      if (!groupId) {
+        return;
+      }
+
+      applyElementsWithInvariants((current) => ungroupElements(current, groupId));
+      return;
+    }
+
     if (action.kind === "delete") {
-      setElements((current) =>
-        current.filter((element) => element.id !== selectedId),
+      const idsToDelete = new Set(
+        getGroupedSelectionIds(elements, [selectedId]),
+      );
+      applyElementsWithInvariants((current) =>
+        current.filter((element) => !idsToDelete.has(element.id)),
       );
       setSelection(makeSelection());
     }
@@ -192,7 +254,8 @@ export function EditorSurface() {
 
   const applyDocument = (documentPayload: ReturnType<typeof loadDocument>) => {
     const loaded = loadDocument(documentPayload);
-    setElements(getDocumentElements(loaded));
+    const repaired = enforceConnectorInvariants(getDocumentElements(loaded));
+    setElements(repaired.repairedElements);
     setSelection(makeSelection());
   };
 
@@ -295,7 +358,19 @@ export function EditorSurface() {
     const hitElement = hitTestElement(world);
 
     if (hitElement) {
-      setSelection(makeSelection([hitElement.id]));
+      if (event.metaKey || event.ctrlKey) {
+        const nextIds = selection.ids.includes(hitElement.id)
+          ? selection.ids.filter((id) => id !== hitElement.id)
+          : [...selection.ids, hitElement.id];
+        setSelection(makeSelection(nextIds));
+        setDragMode(null);
+        return;
+      }
+
+      const nextSelection = hitElement.groupId
+        ? getGroupedSelectionIds(elements, [hitElement.id])
+        : [hitElement.id];
+      setSelection(makeSelection(nextSelection));
       setStroke([]);
       setDragMode("move");
       lastPointerWorldRef.current = world;
@@ -326,10 +401,9 @@ export function EditorSurface() {
     if (dragMode === "move" && selectedId && lastPointerWorldRef.current) {
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
-      updateSelectedElement((element) => ({
-        ...element,
-        ...moveElement(element, dx, dy),
-      }));
+      applyElementsWithInvariants((current) =>
+        moveGroupedElements(current, selection.ids, dx, dy),
+      );
       lastPointerWorldRef.current = world;
       return;
     }
@@ -342,16 +416,18 @@ export function EditorSurface() {
     ) {
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
-      updateSelectedElement((element) => {
-        if (element.kind === "ink") {
-          return element;
-        }
+      applyElementsWithInvariants((current) =>
+        current.map((element) => {
+          if (element.id !== selectedId || element.kind === "ink") {
+            return element;
+          }
 
-        return {
-          ...element,
-          ...resizeElement(element, dx, dy, resizeHandle),
-        };
-      });
+          return {
+            ...element,
+            ...resizeElement(element, dx, dy, resizeHandle),
+          };
+        }),
+      );
       lastPointerWorldRef.current = world;
       return;
     }
@@ -394,7 +470,13 @@ export function EditorSurface() {
 
       const recognizedElement = result.element;
       if (recognizedElement) {
-        setElements((current) => [...current, recognizedElement]);
+        applyElementsWithInvariants((current) => {
+          const nextElement =
+            recognizedElement.kind === "line"
+              ? attachConnectorEndpoints(current, recognizedElement)
+              : recognizedElement;
+          return [...current, nextElement];
+        });
         setSelection(makeSelection([recognizedElement.id]));
       }
       setStroke([]);
