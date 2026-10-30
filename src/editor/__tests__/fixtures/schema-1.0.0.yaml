@@ -1,0 +1,11 @@
+schemaVersion: "1.0.0"
+updatedAt: "2026-01-01T00:00:00.000Z"
+document:
+  version: "0.1.0"
+  elements:
+    - id: "shape-1"
+      kind: "rect"
+      x: 40
+      y: 60
+      width: 120
+      height: 80

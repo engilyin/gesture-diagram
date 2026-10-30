@@ -1,6 +1,6 @@
 import type { DiagramDocument, DiagramElement } from './types';
 
-export const CURRENT_SCHEMA_VERSION = '1.0.0';
+export const CURRENT_SCHEMA_VERSION = '1.1.0';
 
 export type PersistedDiagramDocument = {
   schemaVersion: string;
