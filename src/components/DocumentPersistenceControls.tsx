@@ -1,4 +1,4 @@
-import { useId, type ChangeEvent } from 'react';
+import { useId, type ChangeEvent } from "react";
 
 interface DocumentPersistenceControlsProps {
   onSave: () => void;
@@ -22,7 +22,7 @@ export function DocumentPersistenceControls({
     }
 
     await onImport(file);
-    event.currentTarget.value = '';
+    event.currentTarget.value = "";
   };
 
   return (
@@ -41,13 +41,13 @@ export function DocumentPersistenceControls({
         Export YAML
       </button>
       <label htmlFor={fileInputId}>
-        Import YAML
+        Import File
         <input
           id={fileInputId}
           type="file"
-          accept=".yaml,.yml,text/yaml,text/plain"
+          accept=".yaml,.yml,.xml,.drawio,.mmd,.mermaid,text/yaml,text/plain,text/xml"
           onChange={handleFileChange}
-          style={{ display: 'none' }}
+          style={{ display: "none" }}
         />
       </label>
     </div>
