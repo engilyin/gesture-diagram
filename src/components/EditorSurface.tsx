@@ -63,6 +63,7 @@ import {
   createLine,
   createRectangle,
   createText,
+  createTriangle,
 } from "../editor/shapes";
 import { resizeElement, type ResizeHandle } from "../editor/transform";
 import {
@@ -86,7 +87,13 @@ type HistorySnapshot = DiagramElement[];
 type MarqueeSelection = { start: Point; end: Point };
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
-type ShapeChoice = "rect" | "ellipse" | "diamond" | "text" | "line";
+type ShapeChoice =
+  | "rect"
+  | "ellipse"
+  | "diamond"
+  | "triangle"
+  | "text"
+  | "line";
 
 function getStrokeBounds(points: Point[]): Bounds {
   const xs = points.map((point) => point.x);
@@ -110,6 +117,9 @@ function createShapeFromStroke(kind: ShapeChoice, strokePoints: Point[]): Diagra
   if (kind === "diamond") {
     return createDiamond(bounds.minX, bounds.minY, width, height);
   }
+  if (kind === "triangle") {
+    return createTriangle(bounds.minX, bounds.minY, width, height);
+  }
   if (kind === "line") {
     return createLine(bounds.minX, bounds.minY, width, height);
   }
@@ -117,6 +127,51 @@ function createShapeFromStroke(kind: ShapeChoice, strokePoints: Point[]): Diagra
     return createText(bounds.minX, bounds.minY, width, height);
   }
   return createRectangle(bounds.minX, bounds.minY, width, height);
+}
+
+function isHorizontalScribbleStroke(points: Point[]): boolean {
+  if (points.length < 3) {
+    return false;
+  }
+
+  const bounds = getStrokeBounds(points);
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  const pathLength = points.reduce((total, point, index) => {
+    if (index === 0) {
+      return total;
+    }
+    const previous = points[index - 1];
+    if (!previous) {
+      return total;
+    }
+    return total + Math.hypot(point.x - previous.x, point.y - previous.y);
+  }, 0);
+  const start = points[0];
+  const end = points[points.length - 1];
+  if (!start || !end) {
+    return false;
+  }
+  const startEndDistance = Math.hypot(end.x - start.x, end.y - start.y);
+
+  return (
+    width >= 40 &&
+    height >= 2 &&
+    height <= 42 &&
+    width > height * 1.8 &&
+    pathLength >= width * 1.05 &&
+    startEndDistance <= width * 0.72
+  );
+}
+
+function looksLikeTextGesture(points: Point[]): boolean {
+  if (points.length < 2) {
+    return false;
+  }
+  const bounds = getStrokeBounds(points);
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  return width >= 40 && height <= 52 && width > height * 2;
 }
 
 type EditorSurfaceProps = {
@@ -582,6 +637,7 @@ export function EditorSurface({
         "rect",
         "ellipse",
         "diamond",
+        "triangle",
         "text",
       ];
       const currentKind =
@@ -1104,15 +1160,72 @@ export function EditorSurface({
       return;
     }
 
-    if (stroke.length > 0 && dragMode === "draw") {
+    if (stroke.length === 1 && dragMode === "draw") {
+      const tapPoint = stroke[0];
+      if (tapPoint) {
+        const textElement = createText(tapPoint.x, tapPoint.y, 160, 56);
+        applyElementsWithInvariants((current) => [...current, textElement]);
+        setSelection(makeSelection([textElement.id]));
+        setEditingTextElementId(textElement.id);
+        setTextDraft(textElement.text ?? "");
+      }
+      setStroke([]);
+    } else if (stroke.length > 0 && dragMode === "draw") {
+      if (looksLikeTextGesture(stroke)) {
+        const textElement = createShapeFromStroke("text", stroke);
+        applyElementsWithInvariants((current) => [...current, textElement]);
+        setSelection(makeSelection([textElement.id]));
+        setEditingTextElementId(textElement.id);
+        setTextDraft(textElement.text ?? "");
+        setStroke([]);
+        setMarqueeSelection(null);
+        setDragMode(null);
+        setIsPanning(false);
+        setHoveredElementId(null);
+        dragStartRef.current = null;
+        lastPointerWorldRef.current = null;
+        return;
+      }
       const normalized = normalizeStroke(stroke);
+      if (looksLikeTextGesture(normalized)) {
+        const textElement = createShapeFromStroke("text", normalized);
+        applyElementsWithInvariants((current) => [...current, textElement]);
+        setSelection(makeSelection([textElement.id]));
+        setEditingTextElementId(textElement.id);
+        setTextDraft(textElement.text ?? "");
+        setStroke([]);
+        setMarqueeSelection(null);
+        setDragMode(null);
+        setIsPanning(false);
+        setHoveredElementId(null);
+        dragStartRef.current = null;
+        lastPointerWorldRef.current = null;
+        return;
+      }
+      if (isHorizontalScribbleStroke(normalized)) {
+        const textElement = createShapeFromStroke("text", normalized);
+        applyElementsWithInvariants((current) => [...current, textElement]);
+        setSelection(makeSelection([textElement.id]));
+        setEditingTextElementId(textElement.id);
+        setTextDraft(textElement.text ?? "");
+        setStroke([]);
+        setMarqueeSelection(null);
+        setDragMode(null);
+        setIsPanning(false);
+        setHoveredElementId(null);
+        dragStartRef.current = null;
+        lastPointerWorldRef.current = null;
+        return;
+      }
       const result = recognizeStroke(normalized);
       const decision = evaluateAmbiguity(normalized);
       const mismatchedIntent =
         decision.kind !== "ink" && decision.kind !== result.kind;
 
       const shouldConfirmFallback =
-        result.confidence < 0.75 || decision.kind === "ink" || mismatchedIntent;
+        result.kind === "ink" ||
+        !result.element ||
+        (result.confidence < 0.7 && (decision.kind === "ink" || mismatchedIntent));
 
       if (shouldConfirmFallback) {
         setPendingDecision(decision);
@@ -1142,6 +1255,10 @@ export function EditorSurface({
           return [...current, nextElement];
         });
         setSelection(makeSelection([snappedElement.id]));
+        if (snappedElement.kind === "text") {
+          setEditingTextElementId(snappedElement.id);
+          setTextDraft(snappedElement.text ?? "");
+        }
       }
       setStroke([]);
     }
@@ -1796,6 +1913,29 @@ export function EditorSurface({
                 >
                   <polygon
                     points={`${element.width / 2},0 ${element.width},${element.height / 2} ${element.width / 2},${element.height} 0,${element.height / 2}`}
+                    fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                    stroke={isSelected ? selectedColor : baseColor}
+                    strokeWidth={strokeWidth}
+                  />
+                </svg>
+              );
+            }
+
+            if (element.kind === "triangle") {
+              return (
+                <svg
+                  key={element.id}
+                  style={{
+                    position: "absolute",
+                    left: element.x,
+                    top: element.y,
+                    width: element.width,
+                    height: element.height,
+                    overflow: "visible",
+                  }}
+                >
+                  <polygon
+                    points={`${element.width / 2},0 ${element.width},${element.height} 0,${element.height}`}
                     fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
                     stroke={isSelected ? selectedColor : baseColor}
                     strokeWidth={strokeWidth}

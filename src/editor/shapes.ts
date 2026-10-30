@@ -54,6 +54,24 @@ export function createDiamond(
   };
 }
 
+export function createTriangle(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): DiagramElement {
+  return {
+    id: crypto.randomUUID(),
+    kind: "triangle",
+    x,
+    y,
+    width,
+    height,
+    color: "#4f46e5",
+    strokeWidth: 2,
+  };
+}
+
 export function createLine(
   x: number,
   y: number,

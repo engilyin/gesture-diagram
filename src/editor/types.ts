@@ -1,6 +1,6 @@
 export type DiagramElement = {
   id: string;
-  kind: "rect" | "ellipse" | "diamond" | "line" | "ink" | "text";
+  kind: "rect" | "ellipse" | "diamond" | "triangle" | "line" | "ink" | "text";
   x: number;
   y: number;
   width: number;

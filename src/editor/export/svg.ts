@@ -48,6 +48,13 @@ export function exportSvg(
       return `<polygon points="${top} ${right} ${bottom} ${left}" fill="rgba(79,70,229,0.12)" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
     }
 
+    if (element.kind === "triangle") {
+      const top = `${element.x + element.width / 2},${element.y}`;
+      const right = `${element.x + element.width},${element.y + element.height}`;
+      const left = `${element.x},${element.y + element.height}`;
+      return `<polygon points="${top} ${right} ${left}" fill="rgba(79,70,229,0.12)" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
+    }
+
     if (element.kind === "ink" && element.points && element.points.length > 1) {
       const points = element.points
         .map((point) => `${point.x},${point.y}`)
