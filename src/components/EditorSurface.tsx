@@ -38,6 +38,8 @@ import {
   createYamlExportBlob,
   importDocumentFromFile,
 } from "../editor/persistence/fileWorkflow";
+import { importDrawIo } from "../editor/import/drawio";
+import { importMermaid } from "../editor/import/mermaid";
 import { recognizeStroke } from "../editor/recognition";
 import {
   getPrimarySelection,
@@ -358,6 +360,29 @@ export function EditorSurface() {
 
   const handleImport = async (file: File) => {
     try {
+      const lowerName = file.name.toLowerCase();
+      const source = await file.text();
+
+      if (lowerName.endsWith(".drawio") || lowerName.endsWith(".xml")) {
+        const imported = importDrawIo(source);
+        applyDocument(imported.document);
+        setPersistenceError(null);
+        setPersistenceMessage(
+          imported.fidelity.warnings.length > 0
+            ? `Imported draw.io file with ${imported.fidelity.warnings.length} fidelity warnings.`
+            : "Imported draw.io file.",
+        );
+        return;
+      }
+
+      if (lowerName.endsWith(".mmd") || lowerName.endsWith(".mermaid")) {
+        const imported = importMermaid(source);
+        applyDocument(imported.document);
+        setPersistenceError(null);
+        setPersistenceMessage("Imported Mermaid file.");
+        return;
+      }
+
       const imported = await importDocumentFromFile(file);
       applyDocument(imported);
       setPersistenceError(null);

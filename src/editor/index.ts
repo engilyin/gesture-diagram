@@ -1,35 +1,53 @@
-export type { DiagramDocument, DiagramElement, GestureStroke, Point } from './types';
+export type {
+  DiagramDocument,
+  DiagramElement,
+  GestureStroke,
+  Point,
+} from "./types";
 export {
   createDocument,
   createDocumentFromElements,
   getDocumentElements,
   loadDocument,
   saveDocument,
-} from './document';
-export { createRectangle, createLine } from './shapes';
-export { recognizeStroke } from './recognition';
-export { CURRENT_SCHEMA_VERSION, type PersistedDiagramDocument } from './schema';
-export { serializeDocument, deserializeDocument } from './persistence/yamlCodec';
+} from "./document";
+export { createRectangle, createLine } from "./shapes";
+export { recognizeStroke } from "./recognition";
+export {
+  CURRENT_SCHEMA_VERSION,
+  type PersistedDiagramDocument,
+} from "./schema";
+export {
+  serializeDocument,
+  deserializeDocument,
+} from "./persistence/yamlCodec";
 export {
   getBrowserStorageKey,
   loadFromBrowserStorage,
   saveToBrowserStorage,
-} from './persistence/browserStorage';
+} from "./persistence/browserStorage";
 export {
   createDownloadFilename,
   createYamlExportBlob,
   exportDocumentToYaml,
   importDocumentFromFile,
   importDocumentFromText,
-} from './persistence/fileWorkflow';
+} from "./persistence/fileWorkflow";
 export {
   attachConnectorEndpoints,
   enforceConnectorInvariants,
   type ConnectorInvariantResult,
-} from './connectorGraph';
+} from "./connectorGraph";
 export {
   getGroupedSelectionIds,
   groupElements,
   moveGroupedElements,
   ungroupElements,
-} from './grouping';
+} from "./grouping";
+export {
+  createFidelityReport,
+  type FidelityIssue,
+  type FidelityReport,
+} from "./import/fidelity";
+export { importDrawIo } from "./import/drawio";
+export { importMermaid } from "./import/mermaid";
