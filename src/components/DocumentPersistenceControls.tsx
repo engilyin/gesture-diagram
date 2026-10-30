@@ -3,14 +3,18 @@ import { useId, type ChangeEvent } from "react";
 interface DocumentPersistenceControlsProps {
   onSave: () => void;
   onLoad: () => void;
-  onExport: () => void;
+  onExportYaml: () => void;
+  onExportSvg: () => void;
+  onExportPng: () => void;
   onImport: (file: File) => Promise<void>;
 }
 
 export function DocumentPersistenceControls({
   onSave,
   onLoad,
-  onExport,
+  onExportYaml,
+  onExportSvg,
+  onExportPng,
   onImport,
 }: DocumentPersistenceControlsProps) {
   const fileInputId = useId();
@@ -37,8 +41,14 @@ export function DocumentPersistenceControls({
       <button type="button" onClick={onLoad}>
         Load
       </button>
-      <button type="button" onClick={onExport}>
+      <button type="button" onClick={onExportYaml}>
         Export YAML
+      </button>
+      <button type="button" onClick={onExportSvg}>
+        Export SVG
+      </button>
+      <button type="button" onClick={onExportPng}>
+        Export PNG
       </button>
       <label htmlFor={fileInputId}>
         Import File

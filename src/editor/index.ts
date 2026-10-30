@@ -51,3 +51,9 @@ export {
 } from "./import/fidelity";
 export { importDrawIo } from "./import/drawio";
 export { importMermaid } from "./import/mermaid";
+export {
+  collectExportFidelity,
+  type ExportFidelityReport,
+} from "./export/fidelity";
+export { exportSvg } from "./export/svg";
+export { exportPng } from "./export/png";
