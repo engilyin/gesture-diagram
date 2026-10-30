@@ -1,9 +1,22 @@
-import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { normalizeStroke } from '../editor/input';
-import { recognizeStroke } from '../editor/recognition';
-import { makeSelection } from '../editor/selection';
-import { clampScale, createViewState, type ViewState } from '../editor/viewport';
-import type { DiagramElement, Point } from '../editor/types';
+import {
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { GestureFallbackPanel } from "./GestureFallbackPanel";
+import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
+import { normalizeStroke } from "../editor/input";
+import { recognizeStroke } from "../editor/recognition";
+import { makeSelection } from "../editor/selection";
+import { createInk } from "../editor/shapes";
+import {
+  clampScale,
+  createViewState,
+  type ViewState,
+} from "../editor/viewport";
+import type { DiagramElement, Point } from "../editor/types";
 
 const canvasWidth = 1600;
 const canvasHeight = 1000;
@@ -13,6 +26,9 @@ export function EditorSurface() {
   const [elements, setElements] = useState<DiagramElement[]>([]);
   const [selection, setSelection] = useState(makeSelection());
   const [stroke, setStroke] = useState<Point[]>([]);
+  const [pendingDecision, setPendingDecision] =
+    useState<AmbiguityDecision | null>(null);
+  const [pendingStroke, setPendingStroke] = useState<Point[] | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -36,6 +52,11 @@ export function EditorSurface() {
       return;
     }
 
+    if (pendingDecision) {
+      setPendingDecision(null);
+      setPendingStroke(null);
+    }
+
     const nextStroke = [...stroke, screenToWorld(local)];
     setStroke(nextStroke);
     setSelection(makeSelection());
@@ -48,7 +69,11 @@ export function EditorSurface() {
     if (isPanning && dragStartRef.current) {
       const dx = local.x - dragStartRef.current.x;
       const dy = local.y - dragStartRef.current.y;
-      setView((current) => ({ ...current, x: current.x + dx, y: current.y + dy }));
+      setView((current) => ({
+        ...current,
+        x: current.x + dx,
+        y: current.y + dy,
+      }));
       dragStartRef.current = local;
       return;
     }
@@ -63,15 +88,48 @@ export function EditorSurface() {
     if (stroke.length > 0) {
       const normalized = normalizeStroke(stroke);
       const result = recognizeStroke(normalized);
-      if (result.element) {
-        setElements((current) => [...current, result.element!]);
-        setSelection(makeSelection([result.element!.id]));
+      const decision = evaluateAmbiguity(normalized);
+      const mismatchedIntent =
+        decision.kind !== "ink" && decision.kind !== result.kind;
+
+      const shouldConfirmFallback =
+        result.confidence < 0.75 || decision.kind === "ink" || mismatchedIntent;
+
+      if (shouldConfirmFallback) {
+        setPendingDecision(decision);
+        setPendingStroke(normalized);
+        setStroke([]);
+        setIsPanning(false);
+        dragStartRef.current = null;
+        return;
+      }
+
+      const recognizedElement = result.element;
+      if (recognizedElement) {
+        setElements((current) => [...current, recognizedElement]);
+        setSelection(makeSelection([recognizedElement.id]));
       }
       setStroke([]);
     }
 
     setIsPanning(false);
     dragStartRef.current = null;
+  };
+
+  const handleKeepInk = () => {
+    if (pendingStroke && pendingStroke.length > 1) {
+      const inkElement = createInk(pendingStroke);
+      setElements((current) => [...current, inkElement]);
+      setSelection(makeSelection([inkElement.id]));
+    }
+    setPendingDecision(null);
+    setPendingStroke(null);
+  };
+
+  const handleDismissFallback = () => {
+    setPendingDecision(null);
+    setPendingStroke(null);
+    setSelection(makeSelection());
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -99,12 +157,24 @@ export function EditorSurface() {
   return (
     <div className="editor-shell">
       <div className="toolbar" aria-label="Editor controls">
-        <button type="button" onClick={() => handleZoomButton(0.1)}>Zoom In</button>
-        <button type="button" onClick={() => handleZoomButton(-0.1)}>Zoom Out</button>
+        <button type="button" onClick={() => handleZoomButton(0.1)}>
+          Zoom In
+        </button>
+        <button type="button" onClick={() => handleZoomButton(-0.1)}>
+          Zoom Out
+        </button>
         <span aria-live="polite">
           Zoom: {summary.scale.toFixed(2)} | Selected: {summary.selected}
         </span>
       </div>
+
+      {pendingDecision && (
+        <GestureFallbackPanel
+          message={`Gesture confidence is low (${pendingDecision.confidence.toFixed(2)}). Keep as ink or dismiss.`}
+          onKeepInk={handleKeepInk}
+          onRetryRecognition={handleDismissFallback}
+        />
+      )}
 
       <div
         className="editor-surface"
@@ -121,49 +191,50 @@ export function EditorSurface() {
             width: `${canvasWidth}px`,
             height: `${canvasHeight}px`,
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
-            transformOrigin: '0 0',
+            transformOrigin: "0 0",
           }}
         >
           <div className="grid" aria-hidden="true" />
           {elements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
             const style: CSSProperties = {
-              position: 'absolute',
+              position: "absolute",
               left: element.x,
               top: element.y,
               width: element.width,
               height: element.height,
-              border: isSelected ? '2px solid #f97316' : '1px solid #1f2937',
-              background: element.kind === 'rect' ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
-              borderRadius: element.kind === 'rect' ? 8 : 0,
-              boxSizing: 'border-box',
+              border: isSelected ? "2px solid #f97316" : "1px solid #1f2937",
+              background:
+                element.kind === "rect"
+                  ? "rgba(79, 70, 229, 0.12)"
+                  : "transparent",
+              borderRadius: element.kind === "rect" ? 8 : 0,
+              boxSizing: "border-box",
             };
 
-            if (element.kind === 'line') {
+            if (element.kind === "line") {
               const lineStyle: CSSProperties = {
                 ...style,
-                background: 'transparent',
-                border: '0',
+                background: "transparent",
+                border: "0",
                 borderRadius: 0,
-                boxShadow: 'none',
-                overflow: 'visible',
+                boxShadow: "none",
+                overflow: "visible",
               };
 
               return (
-                <div
-                  key={element.id}
-                  style={lineStyle}
-                  aria-label="Connector"
-                >
+                <div key={element.id} style={lineStyle} aria-label="Connector">
                   <div
                     style={{
-                      width: '100%',
-                      height: '100%',
-                      borderTop: isSelected ? '4px solid #f97316' : '3px solid #111827',
-                      borderLeft: '0',
-                      borderRight: '0',
-                      borderBottom: '0',
-                      boxShadow: 'inset 0 0 0 1px rgba(17, 24, 39, 0.15)',
+                      width: "100%",
+                      height: "100%",
+                      borderTop: isSelected
+                        ? "4px solid #f97316"
+                        : "3px solid #111827",
+                      borderLeft: "0",
+                      borderRight: "0",
+                      borderBottom: "0",
+                      boxShadow: "inset 0 0 0 1px rgba(17, 24, 39, 0.15)",
                       borderRadius: 0,
                     }}
                   />
@@ -171,13 +242,45 @@ export function EditorSurface() {
               );
             }
 
+            if (element.kind === "ink" && element.points) {
+              return (
+                <svg
+                  key={element.id}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: `${canvasWidth}px`,
+                    height: `${canvasHeight}px`,
+                    overflow: "visible",
+                  }}
+                >
+                  <polyline
+                    points={element.points
+                      .map((point) => `${point.x},${point.y}`)
+                      .join(" ")}
+                    fill="none"
+                    stroke={isSelected ? "#f97316" : "#2563eb"}
+                    strokeWidth={isSelected ? 4 : 3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              );
+            }
+
             return <div key={element.id} style={style} />;
           })}
 
           {stroke.length > 0 && (
-            <svg className="stroke-layer" viewBox={`0 0 ${canvasWidth} ${canvasHeight}`} preserveAspectRatio="none">
+            <svg
+              className="stroke-layer"
+              viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+              preserveAspectRatio="none"
+            >
               <polyline
-                points={stroke.map((point) => `${point.x},${point.y}`).join(' ')}
+                points={stroke
+                  .map((point) => `${point.x},${point.y}`)
+                  .join(" ")}
                 fill="none"
                 stroke="#2563eb"
                 strokeWidth="3"
