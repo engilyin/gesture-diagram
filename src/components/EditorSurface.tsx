@@ -8,9 +8,25 @@ import {
 } from "react";
 import { GestureFallbackPanel } from "./GestureFallbackPanel";
 import { ContextPalette, type PaletteAction } from "./ContextPalette";
+import { DocumentPersistenceControls } from "./DocumentPersistenceControls";
 import { SelectionHandles } from "./SelectionHandles";
 import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
+import {
+  createDocumentFromElements,
+  getDocumentElements,
+  loadDocument,
+  saveDocument,
+} from "../editor/document";
 import { normalizeStroke } from "../editor/input";
+import {
+  loadFromBrowserStorage,
+  saveToBrowserStorage,
+} from "../editor/persistence/browserStorage";
+import {
+  createDownloadFilename,
+  createYamlExportBlob,
+  importDocumentFromFile,
+} from "../editor/persistence/fileWorkflow";
 import { recognizeStroke } from "../editor/recognition";
 import {
   getPrimarySelection,
@@ -44,6 +60,10 @@ export function EditorSurface() {
     useState<AmbiguityDecision | null>(null);
   const [pendingStroke, setPendingStroke] = useState<Point[] | null>(null);
   const [selectedActions, setSelectedActions] = useState<PaletteAction[]>([]);
+  const [persistenceMessage, setPersistenceMessage] = useState<string | null>(
+    null,
+  );
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
@@ -165,6 +185,95 @@ export function EditorSurface() {
         current.filter((element) => element.id !== selectedId),
       );
       setSelection(makeSelection());
+    }
+  };
+
+  const buildDocument = () => createDocumentFromElements(elements);
+
+  const applyDocument = (documentPayload: ReturnType<typeof loadDocument>) => {
+    const loaded = loadDocument(documentPayload);
+    setElements(getDocumentElements(loaded));
+    setSelection(makeSelection());
+  };
+
+  const handleSave = () => {
+    try {
+      const documentPayload = saveDocument(buildDocument());
+      saveToBrowserStorage(documentPayload);
+      setPersistenceError(null);
+      setPersistenceMessage("Saved document to browser storage.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Save failed: ${
+          error instanceof Error ? error.message : "Unknown persistence error."
+        }`,
+      );
+    }
+  };
+
+  const handleLoad = () => {
+    try {
+      const documentPayload = loadFromBrowserStorage();
+      if (!documentPayload) {
+        setPersistenceError(
+          "No saved document found in browser storage. Save first before loading.",
+        );
+        setPersistenceMessage(null);
+        return;
+      }
+
+      applyDocument(documentPayload);
+      setPersistenceError(null);
+      setPersistenceMessage("Loaded document from browser storage.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Load failed: ${
+          error instanceof Error ? error.message : "Unknown persistence error."
+        }`,
+      );
+    }
+  };
+
+  const handleExport = () => {
+    try {
+      const blob = createYamlExportBlob(buildDocument());
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename();
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage("Exported YAML file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const imported = await importDocumentFromFile(file);
+      applyDocument(imported);
+      setPersistenceError(null);
+      setPersistenceMessage("Imported YAML file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Import failed: ${
+          error instanceof Error
+            ? error.message
+            : "Unsupported or malformed YAML file."
+        }`,
+      );
     }
   };
 
@@ -367,6 +476,25 @@ export function EditorSurface() {
           Zoom: {summary.scale.toFixed(2)} | Selected: {summary.selected}
         </span>
       </div>
+
+      <DocumentPersistenceControls
+        onSave={handleSave}
+        onLoad={handleLoad}
+        onExport={handleExport}
+        onImport={handleImport}
+      />
+
+      {persistenceMessage && (
+        <div className="persistence-message" role="status" aria-live="polite">
+          {persistenceMessage}
+        </div>
+      )}
+
+      {persistenceError && (
+        <div className="persistence-error" role="alert">
+          {persistenceError}
+        </div>
+      )}
 
       {selectedActions.length > 0 && (
         <ContextPalette
