@@ -4,6 +4,11 @@ import { collectExportFidelity } from "./fidelity";
 const SVG_WIDTH = 1600;
 const SVG_HEIGHT = 1000;
 
+export type SvgExportOptions = {
+  width?: number;
+  height?: number;
+};
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -13,10 +18,16 @@ function escapeXml(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export function exportSvg(document: DiagramDocument): {
+export function exportSvg(
+  document: DiagramDocument,
+  options: SvgExportOptions = {},
+): {
   content: string;
   warnings: string[];
 } {
+  const width = options.width ?? SVG_WIDTH;
+  const height = options.height ?? SVG_HEIGHT;
+
   const elements = document.elements.map((element) => {
     const stroke = element.color ?? "#1f2937";
     const strokeWidth = element.strokeWidth ?? 2;
@@ -36,7 +47,7 @@ export function exportSvg(document: DiagramDocument): {
   });
 
   const content = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${SVG_WIDTH}" height="${SVG_HEIGHT}" viewBox="0 0 ${SVG_WIDTH} ${SVG_HEIGHT}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     ...elements,
     "</svg>",
   ].join("\n");

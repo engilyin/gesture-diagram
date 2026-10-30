@@ -64,6 +64,13 @@ export {
 export { exportSvg } from "./export/svg";
 export { exportPng } from "./export/png";
 export {
+  exportPngHeadless,
+  exportSvgHeadless,
+  type HeadlessPngExportOptions,
+  type HeadlessPngRenderer,
+  type HeadlessSvgExportResult,
+} from "./export/headless";
+export {
   getDefaultProfile,
   getProfile,
   listProfiles,
