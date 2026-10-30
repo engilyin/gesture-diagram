@@ -57,6 +57,7 @@ import {
   type ViewState,
 } from "../editor/viewport";
 import type { DiagramDocument, DiagramElement, Point } from "../editor/types";
+import { findSnapGuide, snapToGrid, type SnapGuide } from "../editor/snapping";
 
 const canvasWidth = 1600;
 const canvasHeight = 1000;
@@ -95,6 +96,7 @@ export function EditorSurface({
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
+  const [snapGuide, setSnapGuide] = useState<SnapGuide | null>(null);
   const [, setHistoryVersion] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerWorldRef = useRef<Point | null>(null);
@@ -619,6 +621,7 @@ export function EditorSurface({
           : [...selection.ids, hitElement.id];
         setSelection(makeSelection(nextIds));
         setDragMode(null);
+        setSnapGuide(null);
         return;
       }
 
@@ -629,11 +632,13 @@ export function EditorSurface({
       setStroke([]);
       setDragMode("move");
       lastPointerWorldRef.current = world;
+      setSnapGuide(null);
       return;
     }
 
     setSelection(makeSelection());
     setDragMode("draw");
+    setSnapGuide(null);
     setStroke([world]);
   };
 
@@ -660,9 +665,44 @@ export function EditorSurface({
     if (dragMode === "move" && selectedId && lastPointerWorldRef.current) {
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
+      const snapDisabled = event.altKey;
+      let snappedPosition: { x: number; y: number } | null = null;
+      let guide: SnapGuide | null = null;
+
+      if (!snapDisabled && selection.ids.length === 1) {
+        const primary = elements.find((element) => element.id === selectedId);
+        if (primary && primary.kind !== "line") {
+          const preview = { ...primary, x: primary.x + dx, y: primary.y + dy };
+          const others = elements.filter((element) => element.id !== selectedId);
+          const shapeSnap = findSnapGuide(preview, others);
+          const useShapeSnap = Boolean(shapeSnap.guide);
+          snappedPosition = {
+            x: useShapeSnap ? shapeSnap.x : snapToGrid(preview.x),
+            y: useShapeSnap ? shapeSnap.y : snapToGrid(preview.y),
+          };
+          guide = shapeSnap.guide;
+        }
+      }
+
       applyElementsWithInvariants((current) =>
-        moveGroupedElements(current, selection.ids, dx, dy),
+        {
+          const moved = moveGroupedElements(current, selection.ids, dx, dy);
+          if (snapDisabled || selection.ids.length !== 1 || !snappedPosition) {
+            return moved;
+          }
+
+          return moved.map((element) =>
+            element.id === selectedId
+              ? { ...element, x: snappedPosition.x, y: snappedPosition.y }
+              : element,
+          );
+        },
       );
+      if (snapDisabled) {
+        setSnapGuide(null);
+      } else {
+        setSnapGuide(guide);
+      }
       lastPointerWorldRef.current = world;
       return;
     }
@@ -705,6 +745,7 @@ export function EditorSurface({
       setDragMode(null);
       setResizeHandle(null);
       setIsPanning(false);
+      setSnapGuide(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
       return;
@@ -733,14 +774,19 @@ export function EditorSurface({
 
       const recognizedElement = result.element;
       if (recognizedElement) {
+        const snappedElement = {
+          ...recognizedElement,
+          x: snapToGrid(recognizedElement.x),
+          y: snapToGrid(recognizedElement.y),
+        };
         applyElementsWithInvariants((current) => {
           const nextElement =
-            recognizedElement.kind === "line"
-              ? attachConnectorEndpoints(current, recognizedElement)
-              : recognizedElement;
+            snappedElement.kind === "line"
+              ? attachConnectorEndpoints(current, snappedElement)
+              : snappedElement;
           return [...current, nextElement];
         });
-        setSelection(makeSelection([recognizedElement.id]));
+        setSelection(makeSelection([snappedElement.id]));
       }
       setStroke([]);
     }
@@ -748,6 +794,7 @@ export function EditorSurface({
     setDragMode(null);
     setResizeHandle(null);
     setIsPanning(false);
+    setSnapGuide(null);
     dragStartRef.current = null;
     lastPointerWorldRef.current = null;
   };
@@ -923,6 +970,30 @@ export function EditorSurface({
           }}
         >
           <div className="grid" aria-hidden="true" />
+          {snapGuide && (
+            <div
+              aria-label="Snap guide"
+              style={{
+                position: "absolute",
+                ...(snapGuide.axis === "x"
+                  ? {
+                      left: snapGuide.position,
+                      top: 0,
+                      width: 1,
+                      height: canvasHeight,
+                    }
+                  : {
+                      left: 0,
+                      top: snapGuide.position,
+                      width: canvasWidth,
+                      height: 1,
+                    }),
+                background: "#f97316",
+                opacity: 0.8,
+                pointerEvents: "none",
+              }}
+            />
+          )}
           {visibleElements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
             const strokeWidth = element.strokeWidth ?? 2;
