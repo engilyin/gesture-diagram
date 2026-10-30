@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -6,10 +7,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { GestureFallbackPanel } from "./GestureFallbackPanel";
+import { ContextPalette, type PaletteAction } from "./ContextPalette";
 import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
 import { normalizeStroke } from "../editor/input";
 import { recognizeStroke } from "../editor/recognition";
-import { makeSelection } from "../editor/selection";
+import { hasSelection, makeSelection } from "../editor/selection";
 import { createInk } from "../editor/shapes";
 import {
   clampScale,
@@ -29,6 +31,7 @@ export function EditorSurface() {
   const [pendingDecision, setPendingDecision] =
     useState<AmbiguityDecision | null>(null);
   const [pendingStroke, setPendingStroke] = useState<Point[] | null>(null);
+  const [selectedActions, setSelectedActions] = useState<PaletteAction[]>([]);
   const [isPanning, setIsPanning] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -36,6 +39,22 @@ export function EditorSurface() {
     () => ({ scale: view.scale, selected: selection.ids.length }),
     [selection.ids.length, view.scale],
   );
+
+  useEffect(() => {
+    if (!hasSelection(selection)) {
+      setSelectedActions([]);
+      return;
+    }
+
+    const nextActions: PaletteAction[] = [
+      { id: "convert", label: "Convert", kind: "convert", rank: 1 },
+      { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 2 },
+      { id: "style", label: "Style", kind: "style", rank: 3 },
+      { id: "delete", label: "Delete", kind: "delete", rank: 4 },
+    ];
+
+    setSelectedActions(nextActions);
+  }, [selection]);
 
   const screenToWorld = (point: { x: number; y: number }) => ({
     x: (point.x - view.x) / view.scale,
@@ -167,6 +186,10 @@ export function EditorSurface() {
           Zoom: {summary.scale.toFixed(2)} | Selected: {summary.selected}
         </span>
       </div>
+
+      {selectedActions.length > 0 && (
+        <ContextPalette actions={selectedActions} />
+      )}
 
       {pendingDecision && (
         <GestureFallbackPanel
