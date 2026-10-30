@@ -58,6 +58,7 @@ export const GestureDiagram = forwardRef<
     <EditorSurface
       document={currentDocument}
       readOnly={Boolean(config?.readOnly)}
+      profileId={config?.profileId}
       onDocumentChange={handleDocumentChange}
     />
   );

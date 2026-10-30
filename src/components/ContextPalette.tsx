@@ -1,3 +1,5 @@
+import { getProfile } from "../editor/profiles/registry";
+
 export type PaletteAction = {
   id: string;
   label: string;
@@ -7,10 +9,20 @@ export type PaletteAction = {
 
 interface ContextPaletteProps {
   actions: PaletteAction[];
+  profileId?: string;
   onAction?: (action: PaletteAction) => void;
 }
 
-export function ContextPalette({ actions, onAction }: ContextPaletteProps) {
+export function ContextPalette({
+  actions,
+  profileId,
+  onAction,
+}: ContextPaletteProps) {
+  const profile = profileId ? getProfile(profileId) : null;
+  const priorityByKind = new Map(
+    (profile?.actionPriority ?? []).map((kind, index) => [kind, index]),
+  );
+
   return (
     <div
       className="context-palette"
@@ -19,7 +31,19 @@ export function ContextPalette({ actions, onAction }: ContextPaletteProps) {
     >
       {actions
         .slice()
-        .sort((a, b) => a.rank - b.rank)
+        .sort((a, b) => {
+          const aPriority = priorityByKind.get(a.kind);
+          const bPriority = priorityByKind.get(b.kind);
+
+          if (aPriority !== undefined || bPriority !== undefined) {
+            return (
+              (aPriority ?? Number.MAX_SAFE_INTEGER) -
+              (bPriority ?? Number.MAX_SAFE_INTEGER)
+            );
+          }
+
+          return a.rank - b.rank;
+        })
         .map((action) => (
           <button
             key={action.id}

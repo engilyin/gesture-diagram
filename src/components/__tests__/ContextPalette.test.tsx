@@ -35,4 +35,24 @@ describe("ContextPalette", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Convert" })).toBeInTheDocument();
   });
+
+  it("applies profile-based action prioritization", () => {
+    render(
+      <ContextPalette
+        profileId="architecture-default"
+        actions={[
+          { id: "delete", label: "Delete", kind: "delete", rank: 1 },
+          { id: "group", label: "Group", kind: "group", rank: 2 },
+          { id: "convert", label: "Convert", kind: "convert", rank: 3 },
+        ]}
+      />,
+    );
+
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "Convert",
+      "Group",
+      "Delete",
+    ]);
+  });
 });

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -65,12 +66,14 @@ type DragMode = "draw" | "move" | "resize" | null;
 type EditorSurfaceProps = {
   document?: DiagramDocument;
   readOnly?: boolean;
+  profileId?: string;
   onDocumentChange?: (document: DiagramDocument) => void;
 };
 
 export function EditorSurface({
   document,
   readOnly = false,
+  profileId,
   onDocumentChange,
 }: EditorSurfaceProps) {
   const [view, setView] = useState<ViewState>(createViewState());
@@ -304,8 +307,24 @@ export function EditorSurface({
     }
   };
 
-  const buildDocument = () =>
-    createDocumentFromElements(elements, document?.version ?? "0.1.0");
+  const buildDocument = useCallback(() => {
+    const nextDocument = createDocumentFromElements(
+      elements,
+      document?.version ?? "0.1.0",
+    );
+
+    if (document?.metadata || profileId) {
+      nextDocument.metadata = {
+        ...(document?.metadata ?? {
+          schemaVersion: "v1",
+          updatedAt: new Date().toISOString(),
+        }),
+        profileId: profileId ?? document?.metadata?.profileId,
+      };
+    }
+
+    return nextDocument;
+  }, [document?.metadata, document?.version, elements, profileId]);
 
   useEffect(() => {
     if (!document) {
@@ -322,10 +341,8 @@ export function EditorSurface({
   }, [document, elements]);
 
   useEffect(() => {
-    onDocumentChange?.(
-      createDocumentFromElements(elements, document?.version ?? "0.1.0"),
-    );
-  }, [document?.version, elements, onDocumentChange]);
+    onDocumentChange?.(buildDocument());
+  }, [buildDocument, onDocumentChange]);
 
   const applyDocument = (documentPayload: ReturnType<typeof loadDocument>) => {
     const loaded = loadDocument(documentPayload);
@@ -754,6 +771,7 @@ export function EditorSurface({
       {selectedActions.length > 0 && (
         <ContextPalette
           actions={selectedActions}
+          profileId={profileId}
           onAction={handlePaletteAction}
         />
       )}

@@ -22,7 +22,17 @@ export type DiagramDocument = {
   metadata?: {
     schemaVersion: string;
     updatedAt: string;
+    profileId?: string;
   };
+};
+
+export type DiagramProfile = {
+  id: string;
+  name: string;
+  libraries: string[];
+  actionPriority: Array<
+    "convert" | "style" | "duplicate" | "delete" | "group" | "ungroup"
+  >;
 };
 
 export type Point = { x: number; y: number };

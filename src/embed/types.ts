@@ -2,6 +2,7 @@ import type { DiagramDocument } from "../editor/types";
 
 export type GestureDiagramConfig = {
   readOnly?: boolean;
+  profileId?: string;
 };
 
 export type GestureDiagramApi = {
