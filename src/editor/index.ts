@@ -1,6 +1,7 @@
 export type {
   DiagramDocument,
   DiagramElement,
+  DiagramProfile,
   GestureStroke,
   Point,
 } from "./types";
@@ -57,6 +58,11 @@ export {
 } from "./export/fidelity";
 export { exportSvg } from "./export/svg";
 export { exportPng } from "./export/png";
+export {
+  getDefaultProfile,
+  getProfile,
+  listProfiles,
+} from "./profiles/registry";
 export type {
   GestureDiagramApi,
   GestureDiagramChangeEvent,
