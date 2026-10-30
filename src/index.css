@@ -77,6 +77,18 @@ button {
   gap: 0.5rem;
 }
 
+.context-palette {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
 .editor-surface {
   position: relative;
   flex: 1;
