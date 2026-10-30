@@ -38,6 +38,17 @@ npm run lint
 ```
 
 Expected now:
+
 - `npm test` ✅ passes
 - `npm run build` ✅ passes
 - `npm run lint` ⚠️ currently fails because ESLint 9 flat config (`eslint.config.js`) has not been migrated yet
+
+## Collaboration adapter boundary (future-ready)
+
+The editor remains local-first, but now exposes typed collaboration contracts for future host integrations:
+
+- `src/editor/collaboration/adapter.ts` defines backend-agnostic adapter lifecycle and publish/apply boundaries.
+- `src/editor/collaboration/events.ts` defines versioned collaboration events, including document change envelopes.
+- `createDocumentChangeDispatcher()` in `src/editor/document.ts` provides subscribe/notify hooks for adapters without coupling UI or network concerns into the core editor model.
+
+No live network synchronization is implemented in this iteration.
