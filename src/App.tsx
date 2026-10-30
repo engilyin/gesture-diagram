@@ -1,5 +1,5 @@
-import { EditorSurface } from './components/EditorSurface';
+import { GestureDiagram } from "./embed/react-wrapper";
 
 export default function App() {
-  return <EditorSurface />;
+  return <GestureDiagram />;
 }

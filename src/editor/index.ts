@@ -57,3 +57,8 @@ export {
 } from "./export/fidelity";
 export { exportSvg } from "./export/svg";
 export { exportPng } from "./export/png";
+export type {
+  GestureDiagramApi,
+  GestureDiagramChangeEvent,
+  GestureDiagramConfig,
+} from "../embed/types";
