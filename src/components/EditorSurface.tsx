@@ -104,6 +104,8 @@ export function EditorSurface({
   const undoStackRef = useRef<HistorySnapshot[]>([]);
   const redoStackRef = useRef<HistorySnapshot[]>([]);
   const applyingHistoryRef = useRef(false);
+  const clipboardRef = useRef<DiagramElement[] | null>(null);
+  const pasteSequenceRef = useRef(0);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -267,6 +269,102 @@ export function EditorSurface({
     );
   };
 
+  const instantiateClipboardElements = useCallback(
+    (source: DiagramElement[], offsetStep: number) => {
+      const idMap = new Map<string, string>();
+      source.forEach((element) => {
+        idMap.set(element.id, crypto.randomUUID());
+      });
+
+      const nextElements = source.map((element) => {
+        const nextId = idMap.get(element.id) ?? element.id;
+        const connector =
+          element.connector &&
+          idMap.has(element.connector.fromId) &&
+          idMap.has(element.connector.toId)
+            ? {
+                fromId: idMap.get(element.connector.fromId) ?? element.connector.fromId,
+                toId: idMap.get(element.connector.toId) ?? element.connector.toId,
+              }
+            : undefined;
+
+        return {
+          ...element,
+          id: nextId,
+          x: element.x + offsetStep,
+          y: element.y + offsetStep,
+          points: element.points?.map((point) => ({
+            x: point.x + offsetStep,
+            y: point.y + offsetStep,
+          })),
+          connector,
+        };
+      });
+
+      return {
+        elements: nextElements,
+        ids: nextElements.map((element) => element.id),
+      };
+    },
+    [],
+  );
+
+  const getSelectionForClipboard = useCallback(() => {
+    if (selection.ids.length === 0) {
+      return [];
+    }
+
+    const ids = new Set(getGroupedSelectionIds(elements, selection.ids));
+    const picked = elements.filter((element) => ids.has(element.id));
+    return cloneElements(picked);
+  }, [cloneElements, elements, selection.ids]);
+
+  const copySelection = useCallback(() => {
+    const payload = getSelectionForClipboard();
+    if (payload.length === 0) {
+      return;
+    }
+    clipboardRef.current = payload;
+    pasteSequenceRef.current = 0;
+  }, [getSelectionForClipboard]);
+
+  const cutSelection = useCallback(() => {
+    const payload = getSelectionForClipboard();
+    if (payload.length === 0) {
+      return;
+    }
+    clipboardRef.current = payload;
+    pasteSequenceRef.current = 0;
+    const idsToDelete = new Set(payload.map((element) => element.id));
+    applyElementsWithInvariants((current) =>
+      current.filter((element) => !idsToDelete.has(element.id)),
+    );
+    setSelection(makeSelection());
+  }, [applyElementsWithInvariants, getSelectionForClipboard]);
+
+  const pasteClipboard = useCallback(() => {
+    const payload = clipboardRef.current;
+    if (!payload || payload.length === 0) {
+      return;
+    }
+
+    const offsetStep = 24 * (pasteSequenceRef.current + 1);
+    const next = instantiateClipboardElements(payload, offsetStep);
+    applyElementsWithInvariants((current) => [...current, ...next.elements]);
+    setSelection(makeSelection(next.ids));
+    pasteSequenceRef.current += 1;
+  }, [applyElementsWithInvariants, instantiateClipboardElements]);
+
+  const duplicateSelection = useCallback(() => {
+    const payload = getSelectionForClipboard();
+    if (payload.length === 0) {
+      return;
+    }
+    const next = instantiateClipboardElements(payload, 24);
+    applyElementsWithInvariants((current) => [...current, ...next.elements]);
+    setSelection(makeSelection(next.ids));
+  }, [applyElementsWithInvariants, getSelectionForClipboard, instantiateClipboardElements]);
+
   const performUndo = useCallback(() => {
     if (!canUndo) {
       return;
@@ -332,19 +430,7 @@ export function EditorSurface({
     }
 
     if (action.kind === "duplicate") {
-      const element = elements.find((item) => item.id === selectedId);
-      if (!element) {
-        return;
-      }
-
-      const duplicate: DiagramElement = {
-        ...element,
-        id: crypto.randomUUID(),
-        x: element.x + 24,
-        y: element.y + 24,
-      };
-      applyElementsWithInvariants((current) => [...current, duplicate]);
-      setSelection(makeSelection([duplicate.id]));
+      duplicateSelection();
       return;
     }
 
@@ -875,6 +961,40 @@ export function EditorSurface({
       }
 
       const key = event.key.toLowerCase();
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (key === "c") {
+        event.preventDefault();
+        copySelection();
+        return;
+      }
+
+      if (key === "x") {
+        event.preventDefault();
+        cutSelection();
+        return;
+      }
+
+      if (key === "v") {
+        event.preventDefault();
+        pasteClipboard();
+        return;
+      }
+
+      if (key === "d") {
+        event.preventDefault();
+        duplicateSelection();
+        return;
+      }
+
       if (key === "z" && !event.shiftKey) {
         event.preventDefault();
         performUndo();
@@ -889,7 +1009,15 @@ export function EditorSurface({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [performRedo, performUndo, readOnly]);
+  }, [
+    copySelection,
+    cutSelection,
+    duplicateSelection,
+    pasteClipboard,
+    performRedo,
+    performUndo,
+    readOnly,
+  ]);
 
   return (
     <div className="editor-shell">
