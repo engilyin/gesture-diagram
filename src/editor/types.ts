@@ -8,6 +8,12 @@ export type DiagramElement = {
   color?: string;
   strokeWidth?: number;
   points?: Point[];
+  layer?: number;
+  groupId?: string;
+  connector?: {
+    fromId: string;
+    toId: string;
+  };
 };
 
 export type DiagramDocument = {
