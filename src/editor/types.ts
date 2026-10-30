@@ -14,6 +14,11 @@ export type DiagramElement = {
     fromId: string;
     toId: string;
   };
+  portOffsets?: Array<{
+    id: "top" | "right" | "bottom" | "left";
+    x: number;
+    y: number;
+  }>;
 };
 
 export type DiagramDocument = {
