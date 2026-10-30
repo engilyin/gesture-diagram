@@ -6,6 +6,7 @@ export type DiagramElement = {
   width: number;
   height: number;
   color?: string;
+  strokeWidth?: number;
   points?: Point[];
 };
 

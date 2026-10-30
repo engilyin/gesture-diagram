@@ -7,9 +7,10 @@ export type PaletteAction = {
 
 interface ContextPaletteProps {
   actions: PaletteAction[];
+  onAction?: (action: PaletteAction) => void;
 }
 
-export function ContextPalette({ actions }: ContextPaletteProps) {
+export function ContextPalette({ actions, onAction }: ContextPaletteProps) {
   return (
     <div
       className="context-palette"
@@ -20,7 +21,12 @@ export function ContextPalette({ actions }: ContextPaletteProps) {
         .slice()
         .sort((a, b) => a.rank - b.rank)
         .map((action) => (
-          <button key={action.id} type="button" aria-label={action.label}>
+          <button
+            key={action.id}
+            type="button"
+            aria-label={action.label}
+            onClick={() => onAction?.(action)}
+          >
             {action.label}
           </button>
         ))}

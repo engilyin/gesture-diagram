@@ -8,11 +8,21 @@ import {
 } from "react";
 import { GestureFallbackPanel } from "./GestureFallbackPanel";
 import { ContextPalette, type PaletteAction } from "./ContextPalette";
+import { SelectionHandles } from "./SelectionHandles";
 import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
 import { normalizeStroke } from "../editor/input";
 import { recognizeStroke } from "../editor/recognition";
-import { hasSelection, makeSelection } from "../editor/selection";
+import {
+  getPrimarySelection,
+  hasSelection,
+  makeSelection,
+} from "../editor/selection";
 import { createInk } from "../editor/shapes";
+import {
+  moveElement,
+  resizeElement,
+  type ResizeHandle,
+} from "../editor/transform";
 import {
   clampScale,
   createViewState,
@@ -22,6 +32,8 @@ import type { DiagramElement, Point } from "../editor/types";
 
 const canvasWidth = 1600;
 const canvasHeight = 1000;
+
+type DragMode = "draw" | "move" | "resize" | null;
 
 export function EditorSurface() {
   const [view, setView] = useState<ViewState>(createViewState());
@@ -33,11 +45,22 @@ export function EditorSurface() {
   const [pendingStroke, setPendingStroke] = useState<Point[] | null>(null);
   const [selectedActions, setSelectedActions] = useState<PaletteAction[]>([]);
   const [isPanning, setIsPanning] = useState(false);
+  const [dragMode, setDragMode] = useState<DragMode>(null);
+  const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPointerWorldRef = useRef<Point | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
 
   const summary = useMemo(
     () => ({ scale: view.scale, selected: selection.ids.length }),
     [selection.ids.length, view.scale],
+  );
+
+  const selectedId = useMemo(() => getPrimarySelection(selection), [selection]);
+
+  const selectedElement = useMemo(
+    () => elements.find((element) => element.id === selectedId) ?? null,
+    [elements, selectedId],
   );
 
   useEffect(() => {
@@ -61,9 +84,92 @@ export function EditorSurface() {
     y: (point.y - view.y) / view.scale,
   });
 
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const getLocalPoint = (event: ReactPointerEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const local = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+
+  const hitTestElement = (point: Point): DiagramElement | null => {
+    for (let index = elements.length - 1; index >= 0; index -= 1) {
+      const element = elements[index];
+      const padding = element.kind === "line" ? 8 : 0;
+      const withinX =
+        point.x >= element.x - padding &&
+        point.x <= element.x + element.width + padding;
+      const withinY =
+        point.y >= element.y - padding &&
+        point.y <= element.y + element.height + padding;
+
+      if (withinX && withinY) {
+        return element;
+      }
+    }
+
+    return null;
+  };
+
+  const updateSelectedElement = (
+    updater: (element: DiagramElement) => DiagramElement,
+  ) => {
+    if (!selectedId) {
+      return;
+    }
+
+    setElements((current) =>
+      current.map((element) =>
+        element.id === selectedId ? updater(element) : element,
+      ),
+    );
+  };
+
+  const handlePaletteAction = (action: PaletteAction) => {
+    if (!selectedId) {
+      return;
+    }
+
+    if (action.kind === "style") {
+      const colors = ["#4f46e5", "#0f766e", "#2563eb", "#b91c1c"];
+      updateSelectedElement((element) => {
+        const currentColor = element.color ?? colors[0];
+        const currentIndex = colors.indexOf(currentColor);
+        const nextColor =
+          colors[(currentIndex + 1 + colors.length) % colors.length];
+
+        return {
+          ...element,
+          color: nextColor,
+        };
+      });
+      return;
+    }
+
+    if (action.kind === "duplicate") {
+      const element = elements.find((item) => item.id === selectedId);
+      if (!element) {
+        return;
+      }
+
+      const duplicate: DiagramElement = {
+        ...element,
+        id: crypto.randomUUID(),
+        x: element.x + 24,
+        y: element.y + 24,
+      };
+      setElements((current) => [...current, duplicate]);
+      setSelection(makeSelection([duplicate.id]));
+      return;
+    }
+
+    if (action.kind === "delete") {
+      setElements((current) =>
+        current.filter((element) => element.id !== selectedId),
+      );
+      setSelection(makeSelection());
+    }
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const local = getLocalPoint(event);
 
     if (event.button === 1 || event.shiftKey) {
       setIsPanning(true);
@@ -76,14 +182,25 @@ export function EditorSurface() {
       setPendingStroke(null);
     }
 
-    const nextStroke = [...stroke, screenToWorld(local)];
-    setStroke(nextStroke);
+    const world = screenToWorld(local);
+    const hitElement = hitTestElement(world);
+
+    if (hitElement) {
+      setSelection(makeSelection([hitElement.id]));
+      setStroke([]);
+      setDragMode("move");
+      lastPointerWorldRef.current = world;
+      return;
+    }
+
     setSelection(makeSelection());
+    setDragMode("draw");
+    setStroke([world]);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const local = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const local = getLocalPoint(event);
+    const world = screenToWorld(local);
 
     if (isPanning && dragStartRef.current) {
       const dx = local.x - dragStartRef.current.x;
@@ -97,14 +214,55 @@ export function EditorSurface() {
       return;
     }
 
-    if (stroke.length > 0) {
-      const world = screenToWorld(local);
+    if (dragMode === "move" && selectedId && lastPointerWorldRef.current) {
+      const dx = world.x - lastPointerWorldRef.current.x;
+      const dy = world.y - lastPointerWorldRef.current.y;
+      updateSelectedElement((element) => ({
+        ...element,
+        ...moveElement(element, dx, dy),
+      }));
+      lastPointerWorldRef.current = world;
+      return;
+    }
+
+    if (
+      dragMode === "resize" &&
+      selectedId &&
+      resizeHandle &&
+      lastPointerWorldRef.current
+    ) {
+      const dx = world.x - lastPointerWorldRef.current.x;
+      const dy = world.y - lastPointerWorldRef.current.y;
+      updateSelectedElement((element) => {
+        if (element.kind === "ink") {
+          return element;
+        }
+
+        return {
+          ...element,
+          ...resizeElement(element, dx, dy, resizeHandle),
+        };
+      });
+      lastPointerWorldRef.current = world;
+      return;
+    }
+
+    if (dragMode === "draw" && stroke.length > 0) {
       setStroke((current) => [...current, world]);
     }
   };
 
   const handlePointerUp = () => {
-    if (stroke.length > 0) {
+    if (dragMode === "move" || dragMode === "resize") {
+      setDragMode(null);
+      setResizeHandle(null);
+      setIsPanning(false);
+      dragStartRef.current = null;
+      lastPointerWorldRef.current = null;
+      return;
+    }
+
+    if (stroke.length > 0 && dragMode === "draw") {
       const normalized = normalizeStroke(stroke);
       const result = recognizeStroke(normalized);
       const decision = evaluateAmbiguity(normalized);
@@ -118,8 +276,10 @@ export function EditorSurface() {
         setPendingDecision(decision);
         setPendingStroke(normalized);
         setStroke([]);
+        setDragMode(null);
         setIsPanning(false);
         dragStartRef.current = null;
+        lastPointerWorldRef.current = null;
         return;
       }
 
@@ -131,8 +291,11 @@ export function EditorSurface() {
       setStroke([]);
     }
 
+    setDragMode(null);
+    setResizeHandle(null);
     setIsPanning(false);
     dragStartRef.current = null;
+    lastPointerWorldRef.current = null;
   };
 
   const handleKeepInk = () => {
@@ -149,6 +312,24 @@ export function EditorSurface() {
     setPendingDecision(null);
     setPendingStroke(null);
     setSelection(makeSelection());
+  };
+
+  const handleResizeStart = (
+    handle: ResizeHandle,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!surfaceRef.current) {
+      return;
+    }
+
+    const rect = surfaceRef.current.getBoundingClientRect();
+    const local = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    lastPointerWorldRef.current = screenToWorld(local);
+    setResizeHandle(handle);
+    setDragMode("resize");
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -188,7 +369,10 @@ export function EditorSurface() {
       </div>
 
       {selectedActions.length > 0 && (
-        <ContextPalette actions={selectedActions} />
+        <ContextPalette
+          actions={selectedActions}
+          onAction={handlePaletteAction}
+        />
       )}
 
       {pendingDecision && (
@@ -200,6 +384,7 @@ export function EditorSurface() {
       )}
 
       <div
+        ref={surfaceRef}
         className="editor-surface"
         aria-label="Diagram canvas"
         onPointerDown={handlePointerDown}
@@ -220,13 +405,18 @@ export function EditorSurface() {
           <div className="grid" aria-hidden="true" />
           {elements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
+            const strokeWidth = element.strokeWidth ?? 2;
+            const baseColor = element.color ?? "#1f2937";
+            const selectedColor = "#f97316";
             const style: CSSProperties = {
               position: "absolute",
               left: element.x,
               top: element.y,
               width: element.width,
               height: element.height,
-              border: isSelected ? "2px solid #f97316" : "1px solid #1f2937",
+              border: isSelected
+                ? `${strokeWidth}px solid ${selectedColor}`
+                : `${strokeWidth}px solid ${baseColor}`,
               background:
                 element.kind === "rect"
                   ? "rgba(79, 70, 229, 0.12)"
@@ -251,9 +441,9 @@ export function EditorSurface() {
                     style={{
                       width: "100%",
                       height: "100%",
-                      borderTop: isSelected
-                        ? "4px solid #f97316"
-                        : "3px solid #111827",
+                      borderTop: `${strokeWidth}px solid ${
+                        isSelected ? selectedColor : baseColor
+                      }`,
                       borderLeft: "0",
                       borderRight: "0",
                       borderBottom: "0",
@@ -282,8 +472,8 @@ export function EditorSurface() {
                       .map((point) => `${point.x},${point.y}`)
                       .join(" ")}
                     fill="none"
-                    stroke={isSelected ? "#f97316" : "#2563eb"}
-                    strokeWidth={isSelected ? 4 : 3}
+                    stroke={isSelected ? selectedColor : baseColor}
+                    strokeWidth={isSelected ? strokeWidth + 1 : strokeWidth}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
@@ -293,6 +483,16 @@ export function EditorSurface() {
 
             return <div key={element.id} style={style} />;
           })}
+
+          {selectedElement && selectedElement.kind !== "ink" && (
+            <SelectionHandles
+              x={selectedElement.x}
+              y={selectedElement.y}
+              width={selectedElement.width}
+              height={selectedElement.height}
+              onResizeStart={handleResizeStart}
+            />
+          )}
 
           {stroke.length > 0 && (
             <svg

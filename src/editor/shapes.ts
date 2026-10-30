@@ -14,6 +14,7 @@ export function createRectangle(
     width,
     height,
     color: "#4f46e5",
+    strokeWidth: 2,
   };
 }
 
@@ -34,6 +35,7 @@ export function createLine(
     width: connectorWidth,
     height: connectorHeight,
     color: "#111827",
+    strokeWidth: 3,
   };
 }
 
@@ -53,6 +55,7 @@ export function createInk(points: Point[]): DiagramElement {
     width: Math.max(maxX - minX, 4),
     height: Math.max(maxY - minY, 4),
     color: "#2563eb",
+    strokeWidth: 3,
     points,
   };
 }
