@@ -1495,8 +1495,8 @@ export function EditorSurface({
             width: `${minimapWidth}px`,
             height: `${minimapHeight}px`,
             zIndex: 20,
-            background: "rgba(17, 24, 39, 0.78)",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: "var(--gd-minimap-bg, rgba(17, 24, 39, 0.78))",
+            border: "1px solid var(--gd-minimap-border, rgba(255,255,255,0.2))",
             borderRadius: 8,
             overflow: "hidden",
             cursor: "pointer",
@@ -1512,7 +1512,9 @@ export function EditorSurface({
                 width: Math.max(2, (element.width / canvasWidth) * minimapWidth),
                 height: Math.max(2, (element.height / canvasHeight) * minimapHeight),
                 background:
-                  selection.ids.includes(element.id) ? "#f97316" : "rgba(229, 231, 235, 0.75)",
+                  selection.ids.includes(element.id)
+                    ? "var(--gd-color-selection-handle-border)"
+                    : "var(--gd-minimap-shape, rgba(229, 231, 235, 0.75))",
                 borderRadius: 2,
               }}
             />
@@ -1525,8 +1527,8 @@ export function EditorSurface({
               top: (viewportBounds.minY / canvasHeight) * minimapHeight,
               width: (viewportBounds.width / canvasWidth) * minimapWidth,
               height: (viewportBounds.height / canvasHeight) * minimapHeight,
-              border: "1px solid #22d3ee",
-              background: "rgba(34, 211, 238, 0.12)",
+              border: "1px solid var(--gd-color-connection-port-bg)",
+              background: "var(--gd-minimap-viewport-bg, rgba(34, 211, 238, 0.12))",
               boxSizing: "border-box",
             }}
           />
@@ -1553,8 +1555,8 @@ export function EditorSurface({
                 top: Math.min(marqueeSelection.start.y, marqueeSelection.end.y),
                 width: Math.abs(marqueeSelection.end.x - marqueeSelection.start.x),
                 height: Math.abs(marqueeSelection.end.y - marqueeSelection.start.y),
-                border: "1px dashed #38bdf8",
-                background: "rgba(56, 189, 248, 0.15)",
+                border: "1px dashed var(--gd-marquee-border, #38bdf8)",
+                background: "var(--gd-marquee-bg, rgba(56, 189, 248, 0.15))",
                 pointerEvents: "none",
                 boxSizing: "border-box",
               }}
@@ -1578,7 +1580,7 @@ export function EditorSurface({
                       width: canvasWidth,
                       height: 1,
                     }),
-                background: "#f97316",
+                background: "var(--gd-color-selection-handle-border)",
                 opacity: 0.8,
                 pointerEvents: "none",
               }}
@@ -1587,8 +1589,8 @@ export function EditorSurface({
           {visibleElements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
             const strokeWidth = element.strokeWidth ?? 2;
-            const baseColor = element.color ?? "#1f2937";
-            const selectedColor = "#f97316";
+            const baseColor = element.color ?? "var(--gd-element-stroke, #1f2937)";
+            const selectedColor = "var(--gd-color-selection-handle-border)";
             const style: CSSProperties = {
               position: "absolute",
               left: element.x,
@@ -1600,7 +1602,7 @@ export function EditorSurface({
                 : `${strokeWidth}px solid ${baseColor}`,
               background:
                 element.kind === "rect"
-                  ? "rgba(79, 70, 229, 0.12)"
+                  ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
                   : "transparent",
               borderRadius: element.kind === "rect" ? 8 : 0,
               boxSizing: "border-box",
@@ -1628,7 +1630,8 @@ export function EditorSurface({
                       borderLeft: "0",
                       borderRight: "0",
                       borderBottom: "0",
-                      boxShadow: "inset 0 0 0 1px rgba(17, 24, 39, 0.15)",
+                      boxShadow:
+                        "inset 0 0 0 1px var(--gd-element-line-shadow, rgba(17, 24, 39, 0.15))",
                       borderRadius: 0,
                     }}
                   />
@@ -1686,7 +1689,7 @@ export function EditorSurface({
                   .map((point) => `${point.x},${point.y}`)
                   .join(" ")}
                 fill="none"
-                stroke="#2563eb"
+                stroke="var(--gd-stroke-preview, #2563eb)"
                 strokeWidth="3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
