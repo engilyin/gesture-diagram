@@ -55,16 +55,28 @@ import {
   createViewState,
   type ViewState,
 } from "../editor/viewport";
-import type { DiagramElement, Point } from "../editor/types";
+import type { DiagramDocument, DiagramElement, Point } from "../editor/types";
 
 const canvasWidth = 1600;
 const canvasHeight = 1000;
 
 type DragMode = "draw" | "move" | "resize" | null;
 
-export function EditorSurface() {
+type EditorSurfaceProps = {
+  document?: DiagramDocument;
+  readOnly?: boolean;
+  onDocumentChange?: (document: DiagramDocument) => void;
+};
+
+export function EditorSurface({
+  document,
+  readOnly = false,
+  onDocumentChange,
+}: EditorSurfaceProps) {
   const [view, setView] = useState<ViewState>(createViewState());
-  const [elements, setElements] = useState<DiagramElement[]>([]);
+  const [elements, setElements] = useState<DiagramElement[]>(
+    document ? [...document.elements] : [],
+  );
   const [selection, setSelection] = useState(makeSelection());
   const [stroke, setStroke] = useState<Point[]>([]);
   const [pendingDecision, setPendingDecision] =
@@ -215,6 +227,10 @@ export function EditorSurface() {
   };
 
   const handlePaletteAction = (action: PaletteAction) => {
+    if (readOnly) {
+      return;
+    }
+
     if (!selectedId) {
       return;
     }
@@ -288,7 +304,28 @@ export function EditorSurface() {
     }
   };
 
-  const buildDocument = () => createDocumentFromElements(elements);
+  const buildDocument = () =>
+    createDocumentFromElements(elements, document?.version ?? "0.1.0");
+
+  useEffect(() => {
+    if (!document) {
+      return;
+    }
+    const incoming = JSON.stringify(document.elements);
+    const current = JSON.stringify(elements);
+    if (incoming === current) {
+      return;
+    }
+
+    setElements([...document.elements]);
+    setSelection(makeSelection());
+  }, [document, elements]);
+
+  useEffect(() => {
+    onDocumentChange?.(
+      createDocumentFromElements(elements, document?.version ?? "0.1.0"),
+    );
+  }, [document?.version, elements, onDocumentChange]);
 
   const applyDocument = (documentPayload: ReturnType<typeof loadDocument>) => {
     const loaded = loadDocument(documentPayload);
@@ -453,6 +490,10 @@ export function EditorSurface() {
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (readOnly) {
+      return;
+    }
+
     const local = getLocalPoint(event);
 
     if (event.button === 1 || event.shiftKey) {
@@ -495,6 +536,10 @@ export function EditorSurface() {
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (readOnly) {
+      return;
+    }
+
     const local = getLocalPoint(event);
     const world = screenToWorld(local);
 
@@ -550,6 +595,10 @@ export function EditorSurface() {
   };
 
   const handlePointerUp = () => {
+    if (readOnly) {
+      return;
+    }
+
     if (dragMode === "move" || dragMode === "resize") {
       setDragMode(null);
       setResizeHandle(null);
@@ -602,6 +651,10 @@ export function EditorSurface() {
   };
 
   const handleKeepInk = () => {
+    if (readOnly) {
+      return;
+    }
+
     if (pendingStroke && pendingStroke.length > 1) {
       const inkElement = createInk(pendingStroke);
       setElements((current) => [...current, inkElement]);
@@ -621,6 +674,10 @@ export function EditorSurface() {
     handle: ResizeHandle,
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
+    if (readOnly) {
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
 
@@ -671,14 +728,16 @@ export function EditorSurface() {
         </span>
       </div>
 
-      <DocumentPersistenceControls
-        onSave={handleSave}
-        onLoad={handleLoad}
-        onExportYaml={handleExport}
-        onExportSvg={handleExportSvg}
-        onExportPng={handleExportPng}
-        onImport={handleImport}
-      />
+      {!readOnly && (
+        <DocumentPersistenceControls
+          onSave={handleSave}
+          onLoad={handleLoad}
+          onExportYaml={handleExport}
+          onExportSvg={handleExportSvg}
+          onExportPng={handleExportPng}
+          onImport={handleImport}
+        />
+      )}
 
       {persistenceMessage && (
         <div className="persistence-message" role="status" aria-live="polite">
