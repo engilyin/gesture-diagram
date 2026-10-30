@@ -8,11 +8,31 @@ export type DiagramElement = {
   color?: string;
   strokeWidth?: number;
   points?: Point[];
+  layer?: number;
+  groupId?: string;
+  connector?: {
+    fromId: string;
+    toId: string;
+  };
 };
 
 export type DiagramDocument = {
   version: string;
   elements: DiagramElement[];
+  metadata?: {
+    schemaVersion: string;
+    updatedAt: string;
+    profileId?: string;
+  };
+};
+
+export type DiagramProfile = {
+  id: string;
+  name: string;
+  libraries: string[];
+  actionPriority: Array<
+    "convert" | "style" | "duplicate" | "delete" | "group" | "ungroup"
+  >;
 };
 
 export type Point = { x: number; y: number };

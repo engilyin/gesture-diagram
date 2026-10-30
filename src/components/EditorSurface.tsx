@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -8,9 +9,40 @@ import {
 } from "react";
 import { GestureFallbackPanel } from "./GestureFallbackPanel";
 import { ContextPalette, type PaletteAction } from "./ContextPalette";
+import { DocumentPersistenceControls } from "./DocumentPersistenceControls";
 import { SelectionHandles } from "./SelectionHandles";
 import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
+import { getVisibleElements } from "../editor/culling";
+import {
+  attachConnectorEndpoints,
+  enforceConnectorInvariants,
+} from "../editor/connectorGraph";
+import {
+  createDocumentFromElements,
+  getDocumentElements,
+  loadDocument,
+  saveDocument,
+} from "../editor/document";
+import {
+  getGroupedSelectionIds,
+  groupElements,
+  moveGroupedElements,
+  ungroupElements,
+} from "../editor/grouping";
 import { normalizeStroke } from "../editor/input";
+import {
+  loadFromBrowserStorage,
+  saveToBrowserStorage,
+} from "../editor/persistence/browserStorage";
+import {
+  createDownloadFilename,
+  createYamlExportBlob,
+  importDocumentFromFile,
+} from "../editor/persistence/fileWorkflow";
+import { exportSvg } from "../editor/export/svg";
+import { exportPng } from "../editor/export/png";
+import { importDrawIo } from "../editor/import/drawio";
+import { importMermaid } from "../editor/import/mermaid";
 import { recognizeStroke } from "../editor/recognition";
 import {
   getPrimarySelection,
@@ -18,32 +50,47 @@ import {
   makeSelection,
 } from "../editor/selection";
 import { createInk } from "../editor/shapes";
-import {
-  moveElement,
-  resizeElement,
-  type ResizeHandle,
-} from "../editor/transform";
+import { resizeElement, type ResizeHandle } from "../editor/transform";
 import {
   clampScale,
   createViewState,
   type ViewState,
 } from "../editor/viewport";
-import type { DiagramElement, Point } from "../editor/types";
+import type { DiagramDocument, DiagramElement, Point } from "../editor/types";
 
 const canvasWidth = 1600;
 const canvasHeight = 1000;
 
 type DragMode = "draw" | "move" | "resize" | null;
 
-export function EditorSurface() {
+type EditorSurfaceProps = {
+  document?: DiagramDocument;
+  readOnly?: boolean;
+  profileId?: string;
+  onDocumentChange?: (document: DiagramDocument) => void;
+};
+
+export function EditorSurface({
+  document,
+  readOnly = false,
+  profileId,
+  onDocumentChange,
+}: EditorSurfaceProps) {
   const [view, setView] = useState<ViewState>(createViewState());
-  const [elements, setElements] = useState<DiagramElement[]>([]);
+  const [elements, setElements] = useState<DiagramElement[]>(
+    document ? [...document.elements] : [],
+  );
   const [selection, setSelection] = useState(makeSelection());
   const [stroke, setStroke] = useState<Point[]>([]);
   const [pendingDecision, setPendingDecision] =
     useState<AmbiguityDecision | null>(null);
   const [pendingStroke, setPendingStroke] = useState<Point[] | null>(null);
   const [selectedActions, setSelectedActions] = useState<PaletteAction[]>([]);
+  const [persistenceMessage, setPersistenceMessage] = useState<string | null>(
+    null,
+  );
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [surfaceSize, setSurfaceSize] = useState({ width: 1024, height: 768 });
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
@@ -63,21 +110,81 @@ export function EditorSurface() {
     [elements, selectedId],
   );
 
+  const visibleElements = useMemo(
+    () => getVisibleElements(elements, view, surfaceSize),
+    [elements, surfaceSize, view],
+  );
+
+  useEffect(() => {
+    if (!surfaceRef.current || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+
+      const nextWidth = Math.max(1, Math.round(entry.contentRect.width));
+      const nextHeight = Math.max(1, Math.round(entry.contentRect.height));
+      setSurfaceSize((current) =>
+        current.width === nextWidth && current.height === nextHeight
+          ? current
+          : { width: nextWidth, height: nextHeight },
+      );
+    });
+
+    observer.observe(surfaceRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!hasSelection(selection)) {
       setSelectedActions([]);
       return;
     }
 
+    const selectedElements = elements.filter((element) =>
+      selection.ids.includes(element.id),
+    );
+    const canGroup = selection.ids.length > 1;
+    const canUngroup = selectedElements.some((element) =>
+      Boolean(element.groupId),
+    );
+
     const nextActions: PaletteAction[] = [
       { id: "convert", label: "Convert", kind: "convert", rank: 1 },
       { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 2 },
       { id: "style", label: "Style", kind: "style", rank: 3 },
-      { id: "delete", label: "Delete", kind: "delete", rank: 4 },
+      ...(canGroup
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 4 }]
+        : []),
+      ...(canUngroup
+        ? [
+            {
+              id: "ungroup",
+              label: "Ungroup",
+              kind: "ungroup" as const,
+              rank: 5,
+            },
+          ]
+        : []),
+      { id: "delete", label: "Delete", kind: "delete", rank: 6 },
     ];
 
     setSelectedActions(nextActions);
-  }, [selection]);
+  }, [elements, selection]);
+
+  const applyElementsWithInvariants = (
+    updater: (current: DiagramElement[]) => DiagramElement[],
+  ) => {
+    setElements((current) => {
+      const updated = updater(current);
+      const repaired = enforceConnectorInvariants(updated);
+      return repaired.repairedElements;
+    });
+  };
 
   const screenToWorld = (point: { x: number; y: number }) => ({
     x: (point.x - view.x) / view.scale,
@@ -90,8 +197,8 @@ export function EditorSurface() {
   };
 
   const hitTestElement = (point: Point): DiagramElement | null => {
-    for (let index = elements.length - 1; index >= 0; index -= 1) {
-      const element = elements[index];
+    for (let index = visibleElements.length - 1; index >= 0; index -= 1) {
+      const element = visibleElements[index];
       const padding = element.kind === "line" ? 8 : 0;
       const withinX =
         point.x >= element.x - padding &&
@@ -123,6 +230,10 @@ export function EditorSurface() {
   };
 
   const handlePaletteAction = (action: PaletteAction) => {
+    if (readOnly) {
+      return;
+    }
+
     if (!selectedId) {
       return;
     }
@@ -155,20 +266,251 @@ export function EditorSurface() {
         x: element.x + 24,
         y: element.y + 24,
       };
-      setElements((current) => [...current, duplicate]);
+      applyElementsWithInvariants((current) => [...current, duplicate]);
       setSelection(makeSelection([duplicate.id]));
       return;
     }
 
+    if (action.kind === "group" && selection.ids.length > 1) {
+      const groupId = crypto.randomUUID();
+      applyElementsWithInvariants((current) =>
+        groupElements(current, selection.ids, groupId),
+      );
+      return;
+    }
+
+    if (action.kind === "ungroup") {
+      const selectedElements = elements.filter((element) =>
+        selection.ids.includes(element.id),
+      );
+      const groupId = selectedElements.find(
+        (element) => element.groupId,
+      )?.groupId;
+      if (!groupId) {
+        return;
+      }
+
+      applyElementsWithInvariants((current) =>
+        ungroupElements(current, groupId),
+      );
+      return;
+    }
+
     if (action.kind === "delete") {
-      setElements((current) =>
-        current.filter((element) => element.id !== selectedId),
+      const idsToDelete = new Set(
+        getGroupedSelectionIds(elements, [selectedId]),
+      );
+      applyElementsWithInvariants((current) =>
+        current.filter((element) => !idsToDelete.has(element.id)),
       );
       setSelection(makeSelection());
     }
   };
 
+  const buildDocument = useCallback(() => {
+    const nextDocument = createDocumentFromElements(
+      elements,
+      document?.version ?? "0.1.0",
+    );
+
+    if (document?.metadata || profileId) {
+      nextDocument.metadata = {
+        ...(document?.metadata ?? {
+          schemaVersion: "v1",
+          updatedAt: new Date().toISOString(),
+        }),
+        profileId: profileId ?? document?.metadata?.profileId,
+      };
+    }
+
+    return nextDocument;
+  }, [document?.metadata, document?.version, elements, profileId]);
+
+  useEffect(() => {
+    if (!document) {
+      return;
+    }
+    const incoming = JSON.stringify(document.elements);
+    const current = JSON.stringify(elements);
+    if (incoming === current) {
+      return;
+    }
+
+    setElements([...document.elements]);
+    setSelection(makeSelection());
+  }, [document, elements]);
+
+  useEffect(() => {
+    onDocumentChange?.(buildDocument());
+  }, [buildDocument, onDocumentChange]);
+
+  const applyDocument = (documentPayload: ReturnType<typeof loadDocument>) => {
+    const loaded = loadDocument(documentPayload);
+    const repaired = enforceConnectorInvariants(getDocumentElements(loaded));
+    setElements(repaired.repairedElements);
+    setSelection(makeSelection());
+  };
+
+  const handleSave = () => {
+    try {
+      const documentPayload = saveDocument(buildDocument());
+      saveToBrowserStorage(documentPayload);
+      setPersistenceError(null);
+      setPersistenceMessage("Saved document to browser storage.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Save failed: ${
+          error instanceof Error ? error.message : "Unknown persistence error."
+        }`,
+      );
+    }
+  };
+
+  const handleLoad = () => {
+    try {
+      const documentPayload = loadFromBrowserStorage();
+      if (!documentPayload) {
+        setPersistenceError(
+          "No saved document found in browser storage. Save first before loading.",
+        );
+        setPersistenceMessage(null);
+        return;
+      }
+
+      applyDocument(documentPayload);
+      setPersistenceError(null);
+      setPersistenceMessage("Loaded document from browser storage.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Load failed: ${
+          error instanceof Error ? error.message : "Unknown persistence error."
+        }`,
+      );
+    }
+  };
+
+  const handleExport = () => {
+    try {
+      const blob = createYamlExportBlob(buildDocument());
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename();
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage("Exported YAML file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
+  const handleExportSvg = () => {
+    try {
+      const { content, warnings } = exportSvg(buildDocument());
+      const blob = new Blob([content], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename().replace(/\.yaml$/, ".svg");
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage(
+        warnings.length > 0
+          ? `Exported SVG with ${warnings.length} fidelity warnings.`
+          : "Exported SVG file.",
+      );
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `SVG export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
+  const handleExportPng = async () => {
+    try {
+      const blob = await exportPng(buildDocument());
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename().replace(/\.yaml$/, ".png");
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage("Exported PNG file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `PNG export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const lowerName = file.name.toLowerCase();
+      const source = await file.text();
+
+      if (lowerName.endsWith(".drawio") || lowerName.endsWith(".xml")) {
+        const imported = importDrawIo(source);
+        applyDocument(imported.document);
+        setPersistenceError(null);
+        setPersistenceMessage(
+          imported.fidelity.warnings.length > 0
+            ? `Imported draw.io file with ${imported.fidelity.warnings.length} fidelity warnings.`
+            : "Imported draw.io file.",
+        );
+        return;
+      }
+
+      if (lowerName.endsWith(".mmd") || lowerName.endsWith(".mermaid")) {
+        const imported = importMermaid(source);
+        applyDocument(imported.document);
+        setPersistenceError(null);
+        setPersistenceMessage("Imported Mermaid file.");
+        return;
+      }
+
+      const imported = await importDocumentFromFile(file);
+      applyDocument(imported);
+      setPersistenceError(null);
+      setPersistenceMessage("Imported YAML file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `Import failed: ${
+          error instanceof Error
+            ? error.message
+            : "Unsupported or malformed YAML file."
+        }`,
+      );
+    }
+  };
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (readOnly) {
+      return;
+    }
+
     const local = getLocalPoint(event);
 
     if (event.button === 1 || event.shiftKey) {
@@ -186,7 +528,19 @@ export function EditorSurface() {
     const hitElement = hitTestElement(world);
 
     if (hitElement) {
-      setSelection(makeSelection([hitElement.id]));
+      if (event.metaKey || event.ctrlKey) {
+        const nextIds = selection.ids.includes(hitElement.id)
+          ? selection.ids.filter((id) => id !== hitElement.id)
+          : [...selection.ids, hitElement.id];
+        setSelection(makeSelection(nextIds));
+        setDragMode(null);
+        return;
+      }
+
+      const nextSelection = hitElement.groupId
+        ? getGroupedSelectionIds(elements, [hitElement.id])
+        : [hitElement.id];
+      setSelection(makeSelection(nextSelection));
       setStroke([]);
       setDragMode("move");
       lastPointerWorldRef.current = world;
@@ -199,6 +553,10 @@ export function EditorSurface() {
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (readOnly) {
+      return;
+    }
+
     const local = getLocalPoint(event);
     const world = screenToWorld(local);
 
@@ -217,10 +575,9 @@ export function EditorSurface() {
     if (dragMode === "move" && selectedId && lastPointerWorldRef.current) {
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
-      updateSelectedElement((element) => ({
-        ...element,
-        ...moveElement(element, dx, dy),
-      }));
+      applyElementsWithInvariants((current) =>
+        moveGroupedElements(current, selection.ids, dx, dy),
+      );
       lastPointerWorldRef.current = world;
       return;
     }
@@ -233,16 +590,18 @@ export function EditorSurface() {
     ) {
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
-      updateSelectedElement((element) => {
-        if (element.kind === "ink") {
-          return element;
-        }
+      applyElementsWithInvariants((current) =>
+        current.map((element) => {
+          if (element.id !== selectedId || element.kind === "ink") {
+            return element;
+          }
 
-        return {
-          ...element,
-          ...resizeElement(element, dx, dy, resizeHandle),
-        };
-      });
+          return {
+            ...element,
+            ...resizeElement(element, dx, dy, resizeHandle),
+          };
+        }),
+      );
       lastPointerWorldRef.current = world;
       return;
     }
@@ -253,6 +612,10 @@ export function EditorSurface() {
   };
 
   const handlePointerUp = () => {
+    if (readOnly) {
+      return;
+    }
+
     if (dragMode === "move" || dragMode === "resize") {
       setDragMode(null);
       setResizeHandle(null);
@@ -285,7 +648,13 @@ export function EditorSurface() {
 
       const recognizedElement = result.element;
       if (recognizedElement) {
-        setElements((current) => [...current, recognizedElement]);
+        applyElementsWithInvariants((current) => {
+          const nextElement =
+            recognizedElement.kind === "line"
+              ? attachConnectorEndpoints(current, recognizedElement)
+              : recognizedElement;
+          return [...current, nextElement];
+        });
         setSelection(makeSelection([recognizedElement.id]));
       }
       setStroke([]);
@@ -299,6 +668,10 @@ export function EditorSurface() {
   };
 
   const handleKeepInk = () => {
+    if (readOnly) {
+      return;
+    }
+
     if (pendingStroke && pendingStroke.length > 1) {
       const inkElement = createInk(pendingStroke);
       setElements((current) => [...current, inkElement]);
@@ -318,6 +691,10 @@ export function EditorSurface() {
     handle: ResizeHandle,
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
+    if (readOnly) {
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
 
@@ -368,9 +745,33 @@ export function EditorSurface() {
         </span>
       </div>
 
+      {!readOnly && (
+        <DocumentPersistenceControls
+          onSave={handleSave}
+          onLoad={handleLoad}
+          onExportYaml={handleExport}
+          onExportSvg={handleExportSvg}
+          onExportPng={handleExportPng}
+          onImport={handleImport}
+        />
+      )}
+
+      {persistenceMessage && (
+        <div className="persistence-message" role="status" aria-live="polite">
+          {persistenceMessage}
+        </div>
+      )}
+
+      {persistenceError && (
+        <div className="persistence-error" role="alert">
+          {persistenceError}
+        </div>
+      )}
+
       {selectedActions.length > 0 && (
         <ContextPalette
           actions={selectedActions}
+          profileId={profileId}
           onAction={handlePaletteAction}
         />
       )}
@@ -403,7 +804,7 @@ export function EditorSurface() {
           }}
         >
           <div className="grid" aria-hidden="true" />
-          {elements.map((element) => {
+          {visibleElements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
             const strokeWidth = element.strokeWidth ?? 2;
             const baseColor = element.color ?? "#1f2937";

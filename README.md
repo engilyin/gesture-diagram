@@ -32,12 +32,20 @@ Then open the local Vite URL shown in the terminal (usually `http://localhost:51
 ## Verify current iteration status
 
 ```bash
-npm test -- --run
+npm test
+npm run test:smoke
 npm run build
 npm run lint
 ```
 
-Expected now:
-- `npm test` ✅ passes
-- `npm run build` ✅ passes
-- `npm run lint` ⚠️ currently fails because ESLint 9 flat config (`eslint.config.js`) has not been migrated yet
+The smoke suite (`npm run test:smoke`) covers the core demo flow: create a diagram element, save/load through browser storage, and import a Mermaid fixture.
+
+## Collaboration adapter boundary (future-ready)
+
+The editor remains local-first, but now exposes typed collaboration contracts for future host integrations:
+
+- `src/editor/collaboration/adapter.ts` defines backend-agnostic adapter lifecycle and publish/apply boundaries.
+- `src/editor/collaboration/events.ts` defines versioned collaboration events, including document change envelopes.
+- `createDocumentChangeDispatcher()` in `src/editor/document.ts` provides subscribe/notify hooks for adapters without coupling UI or network concerns into the core editor model.
+
+No live network synchronization is implemented in this iteration.
