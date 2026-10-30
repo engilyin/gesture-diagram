@@ -38,6 +38,8 @@ import {
   createYamlExportBlob,
   importDocumentFromFile,
 } from "../editor/persistence/fileWorkflow";
+import { exportSvg } from "../editor/export/svg";
+import { exportPng } from "../editor/export/png";
 import { importDrawIo } from "../editor/import/drawio";
 import { importMermaid } from "../editor/import/mermaid";
 import { recognizeStroke } from "../editor/recognition";
@@ -358,6 +360,57 @@ export function EditorSurface() {
     }
   };
 
+  const handleExportSvg = () => {
+    try {
+      const { content, warnings } = exportSvg(buildDocument());
+      const blob = new Blob([content], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename().replace(/\.yaml$/, ".svg");
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage(
+        warnings.length > 0
+          ? `Exported SVG with ${warnings.length} fidelity warnings.`
+          : "Exported SVG file.",
+      );
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `SVG export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
+  const handleExportPng = async () => {
+    try {
+      const blob = await exportPng(buildDocument());
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename().replace(/\.yaml$/, ".png");
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage("Exported PNG file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `PNG export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
   const handleImport = async (file: File) => {
     try {
       const lowerName = file.name.toLowerCase();
@@ -621,7 +674,9 @@ export function EditorSurface() {
       <DocumentPersistenceControls
         onSave={handleSave}
         onLoad={handleLoad}
-        onExport={handleExport}
+        onExportYaml={handleExport}
+        onExportSvg={handleExportSvg}
+        onExportPng={handleExportPng}
         onImport={handleImport}
       />
 
