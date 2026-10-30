@@ -140,17 +140,34 @@ export function EditorSurface() {
             };
 
             if (element.kind === 'line') {
+              const lineStyle: CSSProperties = {
+                ...style,
+                background: 'transparent',
+                border: '0',
+                borderRadius: 0,
+                boxShadow: 'none',
+                overflow: 'visible',
+              };
+
               return (
                 <div
                   key={element.id}
-                  style={{
-                    ...style,
-                    background: 'transparent',
-                    border: '2px solid #0f172a',
-                    borderTop: 'none',
-                    borderLeft: 'none',
-                  }}
-                />
+                  style={lineStyle}
+                  aria-label="Connector"
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderTop: isSelected ? '4px solid #f97316' : '3px solid #111827',
+                      borderLeft: '0',
+                      borderRight: '0',
+                      borderBottom: '0',
+                      boxShadow: 'inset 0 0 0 1px rgba(17, 24, 39, 0.15)',
+                      borderRadius: 0,
+                    }}
+                  />
+                </div>
               );
             }
 
