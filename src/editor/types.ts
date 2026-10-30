@@ -19,6 +19,14 @@ export type DiagramElement = {
 export type DiagramDocument = {
   version: string;
   elements: DiagramElement[];
+  settings?: {
+    title?: string;
+    background?: string;
+    canvas?: {
+      width?: number;
+      height?: number;
+    };
+  };
   metadata?: {
     schemaVersion: string;
     updatedAt: string;

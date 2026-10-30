@@ -15,6 +15,12 @@ export function loadDocument(input: DiagramDocument): DiagramDocument {
   return {
     version: input.version,
     elements: [...input.elements],
+    settings: input.settings
+      ? {
+          ...input.settings,
+          canvas: input.settings.canvas ? { ...input.settings.canvas } : undefined,
+        }
+      : undefined,
     metadata: input.metadata ? { ...input.metadata } : undefined,
   };
 }
@@ -23,6 +29,14 @@ export function saveDocument(document: DiagramDocument): DiagramDocument {
   return {
     version: document.version,
     elements: [...document.elements],
+    settings: document.settings
+      ? {
+          ...document.settings,
+          canvas: document.settings.canvas
+            ? { ...document.settings.canvas }
+            : undefined,
+        }
+      : undefined,
     metadata: document.metadata ? { ...document.metadata } : undefined,
   };
 }
@@ -30,10 +44,17 @@ export function saveDocument(document: DiagramDocument): DiagramDocument {
 export function createDocumentFromElements(
   elements: DiagramElement[],
   version = "0.1.0",
+  settings?: DiagramDocument["settings"],
 ): DiagramDocument {
   return {
     version,
     elements: [...elements],
+    settings: settings
+      ? {
+          ...settings,
+          canvas: settings.canvas ? { ...settings.canvas } : undefined,
+        }
+      : undefined,
   };
 }
 
