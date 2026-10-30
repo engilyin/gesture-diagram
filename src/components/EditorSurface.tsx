@@ -43,6 +43,10 @@ import { exportSvg } from "../editor/export/svg";
 import { exportPng } from "../editor/export/png";
 import { importDrawIo } from "../editor/import/drawio";
 import { importMermaid } from "../editor/import/mermaid";
+import {
+  getCycledSelectionId,
+  nudgeSelectedElements,
+} from "../editor/keyboardNavigation";
 import { recognizeStroke } from "../editor/recognition";
 import {
   getPrimarySelection,
@@ -65,8 +69,9 @@ const minimapWidth = 200;
 const minimapHeight = 125;
 const fitPadding = 48;
 
-type DragMode = "draw" | "move" | "resize" | null;
+type DragMode = "draw" | "move" | "resize" | "marquee" | null;
 type HistorySnapshot = DiagramElement[];
+type MarqueeSelection = { start: Point; end: Point };
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
@@ -101,6 +106,8 @@ export function EditorSurface({
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
+  const [marqueeSelection, setMarqueeSelection] =
+    useState<MarqueeSelection | null>(null);
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   const [snapGuide, setSnapGuide] = useState<SnapGuide | null>(null);
   const [, setHistoryVersion] = useState(0);
@@ -272,7 +279,11 @@ export function EditorSurface({
 
   const getLocalPoint = (event: ReactPointerEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const left = Number.isFinite(rect.left) ? rect.left : 0;
+    const top = Number.isFinite(rect.top) ? rect.top : 0;
+    const clientX = Number.isFinite(event.clientX) ? event.clientX : left;
+    const clientY = Number.isFinite(event.clientY) ? event.clientY : top;
+    return { x: clientX - left, y: clientY - top };
   };
 
   const hitTestElement = (point: Point): DiagramElement | null => {
@@ -761,6 +772,7 @@ export function EditorSurface({
 
     setSelection(makeSelection());
     setDragMode("draw");
+    setMarqueeSelection(null);
     setSnapGuide(null);
     setStroke([world]);
   };
@@ -854,7 +866,32 @@ export function EditorSurface({
       return;
     }
 
+    if (dragMode === "marquee" && marqueeSelection) {
+      setMarqueeSelection((current) =>
+        current
+          ? {
+              ...current,
+              end: world,
+            }
+          : current,
+      );
+      return;
+    }
+
     if (dragMode === "draw" && stroke.length > 0) {
+      const start = stroke[0];
+      const width = Math.abs(world.x - start.x);
+      const height = Math.abs(world.y - start.y);
+      const canUseMarquee = !event.altKey && event.pointerType !== "pen";
+      if (canUseMarquee && stroke.length <= 2 && width >= 24 && height >= 24) {
+        setDragMode("marquee");
+        setStroke([]);
+        setMarqueeSelection({
+          start,
+          end: world,
+        });
+        return;
+      }
       setStroke((current) => [...current, world]);
     }
   };
@@ -867,6 +904,32 @@ export function EditorSurface({
     if (dragMode === "move" || dragMode === "resize") {
       setDragMode(null);
       setResizeHandle(null);
+      setIsPanning(false);
+      setSnapGuide(null);
+      dragStartRef.current = null;
+      lastPointerWorldRef.current = null;
+      return;
+    }
+
+    if (dragMode === "marquee" && marqueeSelection) {
+      const minX = Math.min(marqueeSelection.start.x, marqueeSelection.end.x);
+      const maxX = Math.max(marqueeSelection.start.x, marqueeSelection.end.x);
+      const minY = Math.min(marqueeSelection.start.y, marqueeSelection.end.y);
+      const maxY = Math.max(marqueeSelection.start.y, marqueeSelection.end.y);
+
+      const selectedIds = elements
+        .filter(
+          (element) =>
+            element.x >= minX &&
+            element.y >= minY &&
+            element.x + element.width <= maxX &&
+            element.y + element.height <= maxY,
+        )
+        .map((element) => element.id);
+
+      setSelection(makeSelection(selectedIds));
+      setMarqueeSelection(null);
+      setDragMode(null);
       setIsPanning(false);
       setSnapGuide(null);
       dragStartRef.current = null;
@@ -888,6 +951,7 @@ export function EditorSurface({
         setPendingDecision(decision);
         setPendingStroke(normalized);
         setStroke([]);
+        setMarqueeSelection(null);
         setDragMode(null);
         setIsPanning(false);
         dragStartRef.current = null;
@@ -914,6 +978,7 @@ export function EditorSurface({
       setStroke([]);
     }
 
+    setMarqueeSelection(null);
     setDragMode(null);
     setResizeHandle(null);
     setIsPanning(false);
@@ -1053,17 +1118,36 @@ export function EditorSurface({
     setIsMinimapDragging(false);
   };
 
+  const cycleSelection = useCallback(
+    (direction: 1 | -1) => {
+      const nextId = getCycledSelectionId(elements, selection.ids[0], direction);
+      if (!nextId) {
+        return;
+      }
+      setSelection(makeSelection([nextId]));
+    },
+    [elements, selection.ids],
+  );
+
+  const nudgeSelection = useCallback(
+    (dx: number, dy: number) => {
+      if (selection.ids.length === 0) {
+        return;
+      }
+
+      applyElementsWithInvariants((current) =>
+        nudgeSelectedElements(current, selection.ids, dx, dy),
+      );
+    },
+    [applyElementsWithInvariants, selection.ids],
+  );
+
   useEffect(() => {
     if (readOnly) {
       return;
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      const modifier = event.ctrlKey || event.metaKey;
-      if (!modifier) {
-        return;
-      }
-
       const key = event.key.toLowerCase();
       const target = event.target as HTMLElement | null;
       if (
@@ -1072,6 +1156,39 @@ export function EditorSurface({
           target.tagName === "TEXTAREA" ||
           target.isContentEditable)
       ) {
+        return;
+      }
+
+      if (key === "tab") {
+        event.preventDefault();
+        cycleSelection(event.shiftKey ? -1 : 1);
+        return;
+      }
+
+      const nudgeStep = event.shiftKey ? 64 : 16;
+      if (key === "arrowleft") {
+        event.preventDefault();
+        nudgeSelection(-nudgeStep, 0);
+        return;
+      }
+      if (key === "arrowright") {
+        event.preventDefault();
+        nudgeSelection(nudgeStep, 0);
+        return;
+      }
+      if (key === "arrowup") {
+        event.preventDefault();
+        nudgeSelection(0, -nudgeStep);
+        return;
+      }
+      if (key === "arrowdown") {
+        event.preventDefault();
+        nudgeSelection(0, nudgeStep);
+        return;
+      }
+
+      const modifier = event.ctrlKey || event.metaKey;
+      if (!modifier) {
         return;
       }
 
@@ -1116,7 +1233,9 @@ export function EditorSurface({
   }, [
     copySelection,
     cutSelection,
+    cycleSelection,
     duplicateSelection,
+    nudgeSelection,
     pasteClipboard,
     performRedo,
     performUndo,
@@ -1256,6 +1375,22 @@ export function EditorSurface({
           }}
         >
           <div className="grid" aria-hidden="true" />
+          {marqueeSelection && (
+            <div
+              aria-label="Selection marquee"
+              style={{
+                position: "absolute",
+                left: Math.min(marqueeSelection.start.x, marqueeSelection.end.x),
+                top: Math.min(marqueeSelection.start.y, marqueeSelection.end.y),
+                width: Math.abs(marqueeSelection.end.x - marqueeSelection.start.x),
+                height: Math.abs(marqueeSelection.end.y - marqueeSelection.start.y),
+                border: "1px dashed #38bdf8",
+                background: "rgba(56, 189, 248, 0.15)",
+                pointerEvents: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          )}
           {snapGuide && (
             <div
               aria-label="Snap guide"
