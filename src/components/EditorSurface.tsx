@@ -62,6 +62,7 @@ const canvasWidth = 1600;
 const canvasHeight = 1000;
 
 type DragMode = "draw" | "move" | "resize" | null;
+type HistorySnapshot = DiagramElement[];
 
 type EditorSurfaceProps = {
   document?: DiagramDocument;
@@ -94,9 +95,32 @@ export function EditorSurface({
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
+  const [, setHistoryVersion] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerWorldRef = useRef<Point | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const undoStackRef = useRef<HistorySnapshot[]>([]);
+  const redoStackRef = useRef<HistorySnapshot[]>([]);
+  const applyingHistoryRef = useRef(false);
+
+  const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
+    if (typeof structuredClone === "function") {
+      return structuredClone(value);
+    }
+    return JSON.parse(JSON.stringify(value)) as DiagramElement[];
+  }, []);
+
+  const resetHistory = useCallback(
+    (snapshot: DiagramElement[]) => {
+      undoStackRef.current = [cloneElements(snapshot)];
+      redoStackRef.current = [];
+      setHistoryVersion((current) => current + 1);
+    },
+    [cloneElements],
+  );
+
+  const canUndo = undoStackRef.current.length > 1;
+  const canRedo = redoStackRef.current.length > 0;
 
   const summary = useMemo(
     () => ({ scale: view.scale, selected: selection.ids.length }),
@@ -176,15 +200,29 @@ export function EditorSurface({
     setSelectedActions(nextActions);
   }, [elements, selection]);
 
-  const applyElementsWithInvariants = (
-    updater: (current: DiagramElement[]) => DiagramElement[],
-  ) => {
+  const applyElementsWithInvariants = useCallback(
+    (updater: (current: DiagramElement[]) => DiagramElement[]) => {
     setElements((current) => {
       const updated = updater(current);
       const repaired = enforceConnectorInvariants(updated);
-      return repaired.repairedElements;
+      const nextElements = repaired.repairedElements;
+
+      if (!applyingHistoryRef.current) {
+        const currentJson = JSON.stringify(current);
+        const nextJson = JSON.stringify(nextElements);
+        if (currentJson !== nextJson) {
+          undoStackRef.current.push(cloneElements(nextElements));
+          if (undoStackRef.current.length > 100) {
+            undoStackRef.current.shift();
+          }
+          redoStackRef.current = [];
+          setHistoryVersion((value) => value + 1);
+        }
+      }
+
+      return nextElements;
     });
-  };
+  }, [cloneElements]);
 
   const screenToWorld = (point: { x: number; y: number }) => ({
     x: (point.x - view.x) / view.scale,
@@ -215,19 +253,56 @@ export function EditorSurface({
     return null;
   };
 
-  const updateSelectedElement = (
-    updater: (element: DiagramElement) => DiagramElement,
-  ) => {
+  const updateSelectedElement = (updater: (element: DiagramElement) => DiagramElement) => {
     if (!selectedId) {
       return;
     }
 
-    setElements((current) =>
+    applyElementsWithInvariants((current) =>
       current.map((element) =>
         element.id === selectedId ? updater(element) : element,
       ),
     );
   };
+
+  const performUndo = useCallback(() => {
+    if (!canUndo) {
+      return;
+    }
+
+    const currentStack = undoStackRef.current;
+    const current = currentStack[currentStack.length - 1];
+    const previous = currentStack[currentStack.length - 2];
+    if (!current || !previous) {
+      return;
+    }
+
+    applyingHistoryRef.current = true;
+    redoStackRef.current.push(cloneElements(current));
+    undoStackRef.current.pop();
+    setElements(cloneElements(previous));
+    setSelection(makeSelection());
+    applyingHistoryRef.current = false;
+    setHistoryVersion((value) => value + 1);
+  }, [canUndo, cloneElements]);
+
+  const performRedo = useCallback(() => {
+    if (!canRedo) {
+      return;
+    }
+
+    const next = redoStackRef.current.pop();
+    if (!next) {
+      return;
+    }
+
+    applyingHistoryRef.current = true;
+    undoStackRef.current.push(cloneElements(next));
+    setElements(cloneElements(next));
+    setSelection(makeSelection());
+    applyingHistoryRef.current = false;
+    setHistoryVersion((value) => value + 1);
+  }, [canRedo, cloneElements]);
 
   const handlePaletteAction = (action: PaletteAction) => {
     if (readOnly) {
@@ -338,17 +413,27 @@ export function EditorSurface({
 
     setElements([...document.elements]);
     setSelection(makeSelection());
-  }, [document, elements]);
+    resetHistory(document.elements);
+  }, [document, elements, resetHistory]);
 
   useEffect(() => {
     onDocumentChange?.(buildDocument());
   }, [buildDocument, onDocumentChange]);
+
+  useEffect(() => {
+    if (undoStackRef.current.length > 0) {
+      return;
+    }
+
+    resetHistory(elements);
+  }, [elements, resetHistory]);
 
   const applyDocument = (documentPayload: ReturnType<typeof loadDocument>) => {
     const loaded = loadDocument(documentPayload);
     const repaired = enforceConnectorInvariants(getDocumentElements(loaded));
     setElements(repaired.repairedElements);
     setSelection(makeSelection());
+    resetHistory(repaired.repairedElements);
   };
 
   const handleSave = () => {
@@ -674,7 +759,7 @@ export function EditorSurface({
 
     if (pendingStroke && pendingStroke.length > 1) {
       const inkElement = createInk(pendingStroke);
-      setElements((current) => [...current, inkElement]);
+      applyElementsWithInvariants((current) => [...current, inkElement]);
       setSelection(makeSelection([inkElement.id]));
     }
     setPendingDecision(null);
@@ -731,6 +816,34 @@ export function EditorSurface({
     }));
   };
 
+  useEffect(() => {
+    if (readOnly) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const modifier = event.ctrlKey || event.metaKey;
+      if (!modifier) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        performUndo();
+        return;
+      }
+
+      if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        performRedo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [performRedo, performUndo, readOnly]);
+
   return (
     <div className="editor-shell">
       <div className="toolbar" aria-label="Editor controls">
@@ -739,6 +852,12 @@ export function EditorSurface({
         </button>
         <button type="button" onClick={() => handleZoomButton(-0.1)}>
           Zoom Out
+        </button>
+        <button type="button" onClick={performUndo} disabled={!canUndo}>
+          Undo
+        </button>
+        <button type="button" onClick={performRedo} disabled={!canRedo}>
+          Redo
         </button>
         <span aria-live="polite">
           Zoom: {summary.scale.toFixed(2)} | Selected: {summary.selected}
