@@ -55,4 +55,46 @@ describe('recognizeStroke', () => {
 
     expect(result.kind).toBe('ink');
   });
+
+  it("recognizes a closed oval stroke as ellipse", () => {
+    const points = [
+      { x: 60, y: 20 },
+      { x: 78, y: 24 },
+      { x: 94, y: 34 },
+      { x: 108, y: 49 },
+      { x: 116, y: 66 },
+      { x: 118, y: 82 },
+      { x: 112, y: 97 },
+      { x: 98, y: 110 },
+      { x: 80, y: 117 },
+      { x: 60, y: 120 },
+      { x: 40, y: 117 },
+      { x: 22, y: 110 },
+      { x: 8, y: 97 },
+      { x: 2, y: 82 },
+      { x: 4, y: 66 },
+      { x: 12, y: 49 },
+      { x: 26, y: 34 },
+      { x: 42, y: 24 },
+      { x: 60, y: 20 },
+    ];
+
+    const result = recognizeStroke(points);
+    expect(result.kind).toBe("ellipse");
+    expect(result.element?.kind).toBe("ellipse");
+  });
+
+  it("recognizes a closed four-corner stroke as diamond", () => {
+    const points = [
+      { x: 80, y: 0 },
+      { x: 140, y: 60 },
+      { x: 80, y: 120 },
+      { x: 20, y: 60 },
+      { x: 80, y: 0 },
+    ];
+
+    const result = recognizeStroke(points);
+    expect(result.kind).toBe("diamond");
+    expect(result.element?.kind).toBe("diamond");
+  });
 });

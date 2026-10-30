@@ -18,6 +18,42 @@ export function createRectangle(
   };
 }
 
+export function createEllipse(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): DiagramElement {
+  return {
+    id: crypto.randomUUID(),
+    kind: "ellipse",
+    x,
+    y,
+    width,
+    height,
+    color: "#4f46e5",
+    strokeWidth: 2,
+  };
+}
+
+export function createDiamond(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): DiagramElement {
+  return {
+    id: crypto.randomUUID(),
+    kind: "diamond",
+    x,
+    y,
+    width,
+    height,
+    color: "#4f46e5",
+    strokeWidth: 2,
+  };
+}
+
 export function createLine(
   x: number,
   y: number,
@@ -36,6 +72,25 @@ export function createLine(
     height: connectorHeight,
     color: "#111827",
     strokeWidth: 3,
+  };
+}
+
+export function createText(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): DiagramElement {
+  return {
+    id: crypto.randomUUID(),
+    kind: "text",
+    x,
+    y,
+    width: Math.max(width, 120),
+    height: Math.max(height, 48),
+    text: "",
+    color: "#111827",
+    strokeWidth: 1,
   };
 }
 

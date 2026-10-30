@@ -56,7 +56,14 @@ import {
   hasSelection,
   makeSelection,
 } from "../editor/selection";
-import { createInk } from "../editor/shapes";
+import {
+  createDiamond,
+  createEllipse,
+  createInk,
+  createLine,
+  createRectangle,
+  createText,
+} from "../editor/shapes";
 import { resizeElement, type ResizeHandle } from "../editor/transform";
 import {
   clampScale,
@@ -79,6 +86,38 @@ type HistorySnapshot = DiagramElement[];
 type MarqueeSelection = { start: Point; end: Point };
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
+type ShapeChoice = "rect" | "ellipse" | "diamond" | "text" | "line";
+
+function getStrokeBounds(points: Point[]): Bounds {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys),
+  };
+}
+
+function createShapeFromStroke(kind: ShapeChoice, strokePoints: Point[]): DiagramElement {
+  const bounds = getStrokeBounds(strokePoints);
+  const width = Math.max(32, bounds.maxX - bounds.minX);
+  const height = Math.max(32, bounds.maxY - bounds.minY);
+
+  if (kind === "ellipse") {
+    return createEllipse(bounds.minX, bounds.minY, width, height);
+  }
+  if (kind === "diamond") {
+    return createDiamond(bounds.minX, bounds.minY, width, height);
+  }
+  if (kind === "line") {
+    return createLine(bounds.minX, bounds.minY, width, height);
+  }
+  if (kind === "text") {
+    return createText(bounds.minX, bounds.minY, width, height);
+  }
+  return createRectangle(bounds.minX, bounds.minY, width, height);
+}
 
 type EditorSurfaceProps = {
   document?: DiagramDocument;
@@ -128,6 +167,10 @@ export function EditorSurface({
     useState<MarqueeSelection | null>(null);
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   const [snapGuide, setSnapGuide] = useState<SnapGuide | null>(null);
+  const [editingTextElementId, setEditingTextElementId] = useState<string | null>(
+    null,
+  );
+  const [textDraft, setTextDraft] = useState("");
   const [, setHistoryVersion] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerWorldRef = useRef<Point | null>(null);
@@ -531,6 +574,34 @@ export function EditorSurface({
           color: nextColor,
         };
       });
+      return;
+    }
+
+    if (action.kind === "convert") {
+      const conversionOrder: Array<DiagramElement["kind"]> = [
+        "rect",
+        "ellipse",
+        "diamond",
+        "text",
+      ];
+      const currentKind =
+        selectedElement && conversionOrder.includes(selectedElement.kind)
+          ? selectedElement.kind
+          : "rect";
+      const currentIndex = conversionOrder.indexOf(currentKind);
+      const nextKind =
+        conversionOrder[
+          (currentIndex + 1 + conversionOrder.length) % conversionOrder.length
+        ] ?? "rect";
+      updateSelectedElement((element) => ({
+        ...element,
+        kind: nextKind,
+        text: nextKind === "text" ? element.text ?? "" : element.text,
+      }));
+      if (nextKind === "text") {
+        setEditingTextElementId(selectedId);
+        setTextDraft(selectedElement?.text ?? "");
+      }
       return;
     }
 
@@ -1105,6 +1176,50 @@ export function EditorSurface({
     setSelection(makeSelection());
   };
 
+  const handleChooseShape = (kind: ShapeChoice) => {
+    if (readOnly || !pendingStroke || pendingStroke.length < 2) {
+      return;
+    }
+
+    const chosen = createShapeFromStroke(kind, pendingStroke);
+    const snappedElement = {
+      ...chosen,
+      x: snapToGrid(chosen.x),
+      y: snapToGrid(chosen.y),
+    };
+    applyElementsWithInvariants((current) => {
+      const nextElement =
+        snappedElement.kind === "line"
+          ? attachConnectorEndpoints(current, snappedElement)
+          : snappedElement;
+      return [...current, nextElement];
+    });
+    setSelection(makeSelection([snappedElement.id]));
+    if (snappedElement.kind === "text") {
+      setEditingTextElementId(snappedElement.id);
+      setTextDraft(snappedElement.text ?? "");
+    }
+    setPendingDecision(null);
+    setPendingStroke(null);
+  };
+
+  const commitTextEdit = useCallback(() => {
+    if (!editingTextElementId) {
+      return;
+    }
+    applyElementsWithInvariants((current) =>
+      current.map((element) =>
+        element.id === editingTextElementId && element.kind === "text"
+          ? {
+              ...element,
+              text: textDraft.trim(),
+            }
+          : element,
+      ),
+    );
+    setEditingTextElementId(null);
+  }, [applyElementsWithInvariants, editingTextElementId, textDraft]);
+
   const handleResizeStart = (
     handle: ResizeHandle,
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -1466,6 +1581,7 @@ export function EditorSurface({
           message={`Gesture confidence is low (${pendingDecision.confidence.toFixed(2)}). Keep as ink or dismiss.`}
           onKeepInk={handleKeepInk}
           onRetryRecognition={handleDismissFallback}
+          onChooseShape={handleChooseShape}
         />
       )}
 
@@ -1665,6 +1781,72 @@ export function EditorSurface({
               );
             }
 
+            if (element.kind === "diamond") {
+              return (
+                <svg
+                  key={element.id}
+                  style={{
+                    position: "absolute",
+                    left: element.x,
+                    top: element.y,
+                    width: element.width,
+                    height: element.height,
+                    overflow: "visible",
+                  }}
+                >
+                  <polygon
+                    points={`${element.width / 2},0 ${element.width},${element.height / 2} ${element.width / 2},${element.height} 0,${element.height / 2}`}
+                    fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                    stroke={isSelected ? selectedColor : baseColor}
+                    strokeWidth={strokeWidth}
+                  />
+                </svg>
+              );
+            }
+
+            if (element.kind === "text") {
+              return (
+                <div key={element.id} style={style}>
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      border: `1px dashed ${isSelected ? selectedColor : baseColor}`,
+                      padding: "6px 8px",
+                      color: baseColor,
+                      fontSize: "14px",
+                      lineHeight: "18px",
+                      overflow: "hidden",
+                      boxSizing: "border-box",
+                      userSelect: "none",
+                      whiteSpace: "pre-wrap",
+                    }}
+                    onDoubleClick={() => {
+                      setEditingTextElementId(element.id);
+                      setTextDraft(element.text ?? "");
+                    }}
+                  >
+                    {element.text && element.text.length > 0
+                      ? element.text
+                      : "Type text"}
+                  </div>
+                </div>
+              );
+            }
+
+            if (element.kind === "ellipse") {
+              return (
+                <div
+                  key={element.id}
+                  style={{
+                    ...style,
+                    borderRadius: "50%",
+                    background: "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))",
+                  }}
+                />
+              );
+            }
+
             return <div key={element.id} style={style} />;
           })}
 
@@ -1696,6 +1878,54 @@ export function EditorSurface({
               />
             </svg>
           )}
+          {editingTextElementId &&
+            (() => {
+              const editingElement = elements.find(
+                (element) =>
+                  element.id === editingTextElementId && element.kind === "text",
+              );
+              if (!editingElement) {
+                return null;
+              }
+              return (
+                <textarea
+                  aria-label="Edit text element"
+                  autoFocus
+                  value={textDraft}
+                  onChange={(event) => setTextDraft(event.target.value)}
+                  onBlur={commitTextEdit}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setEditingTextElementId(null);
+                      return;
+                    }
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      commitTextEdit();
+                    }
+                  }}
+                  style={{
+                    position: "absolute",
+                    left: editingElement.x,
+                    top: editingElement.y,
+                    width: editingElement.width,
+                    height: editingElement.height,
+                    resize: "none",
+                    border: "1px solid var(--gd-color-selection-handle-border)",
+                    borderRadius: 4,
+                    padding: "6px 8px",
+                    fontSize: "14px",
+                    lineHeight: "18px",
+                    fontFamily: "inherit",
+                    color: "var(--gd-color-text)",
+                    background: "var(--gd-color-surface)",
+                    boxSizing: "border-box",
+                    zIndex: 30,
+                  }}
+                />
+              );
+            })()}
         </div>
       </div>
     </div>
