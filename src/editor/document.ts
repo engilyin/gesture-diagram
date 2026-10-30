@@ -1,8 +1,12 @@
-import type { DiagramDocument, DiagramElement } from './types';
+import type { DiagramDocument, DiagramElement } from "./types";
+import {
+  createDocumentChangeEvent,
+  type DiagramSyncEvent,
+} from "./collaboration/events";
 
 export function createDocument(): DiagramDocument {
   return {
-    version: '0.1.0',
+    version: "0.1.0",
     elements: [],
   };
 }
@@ -25,7 +29,7 @@ export function saveDocument(document: DiagramDocument): DiagramDocument {
 
 export function createDocumentFromElements(
   elements: DiagramElement[],
-  version = '0.1.0',
+  version = "0.1.0",
 ): DiagramDocument {
   return {
     version,
@@ -33,6 +37,39 @@ export function createDocumentFromElements(
   };
 }
 
-export function getDocumentElements(document: DiagramDocument): DiagramElement[] {
+export function getDocumentElements(
+  document: DiagramDocument,
+): DiagramElement[] {
   return [...document.elements];
+}
+
+export type DocumentChangeSubscriber = (event: DiagramSyncEvent) => void;
+
+export type DocumentChangeDispatcher = {
+  subscribe: (subscriber: DocumentChangeSubscriber) => () => void;
+  notify: (
+    source: "local" | "remote",
+    document: DiagramDocument,
+    previousDocument?: DiagramDocument,
+  ) => DiagramSyncEvent;
+};
+
+export function createDocumentChangeDispatcher(): DocumentChangeDispatcher {
+  const subscribers = new Set<DocumentChangeSubscriber>();
+
+  return {
+    subscribe(subscriber) {
+      subscribers.add(subscriber);
+      return () => subscribers.delete(subscriber);
+    },
+    notify(source, document, previousDocument) {
+      const event = createDocumentChangeEvent(
+        source,
+        document,
+        previousDocument,
+      );
+      subscribers.forEach((subscriber) => subscriber(event));
+      return event;
+    },
+  };
 }

@@ -6,11 +6,16 @@ export type {
   Point,
 } from "./types";
 export {
+  createDocumentChangeDispatcher,
   createDocument,
   createDocumentFromElements,
   getDocumentElements,
   loadDocument,
   saveDocument,
+} from "./document";
+export type {
+  DocumentChangeDispatcher,
+  DocumentChangeSubscriber,
 } from "./document";
 export { createRectangle, createLine } from "./shapes";
 export { recognizeStroke } from "./recognition";
@@ -63,6 +68,21 @@ export {
   getProfile,
   listProfiles,
 } from "./profiles/registry";
+export type {
+  CollaborationAdapter,
+  CollaborationAdapterError,
+  CollaborationAdapterHooks,
+} from "./collaboration/adapter";
+export {
+  COLLABORATION_EVENT_VERSION,
+  createDocumentChangeEvent,
+} from "./collaboration/events";
+export type {
+  CollaborationEventEnvelope,
+  CollaborationEventType,
+  CollaborationLifecycleEvent,
+  DiagramSyncEvent,
+} from "./collaboration/events";
 export type {
   GestureDiagramApi,
   GestureDiagramChangeEvent,
