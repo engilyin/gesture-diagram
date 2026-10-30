@@ -61,9 +61,14 @@ import { findSnapGuide, snapToGrid, type SnapGuide } from "../editor/snapping";
 
 const canvasWidth = 1600;
 const canvasHeight = 1000;
+const minimapWidth = 200;
+const minimapHeight = 125;
+const fitPadding = 48;
 
 type DragMode = "draw" | "move" | "resize" | null;
 type HistorySnapshot = DiagramElement[];
+
+type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
 type EditorSurfaceProps = {
   document?: DiagramDocument;
@@ -96,6 +101,7 @@ export function EditorSurface({
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
+  const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   const [snapGuide, setSnapGuide] = useState<SnapGuide | null>(null);
   const [, setHistoryVersion] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -141,6 +147,37 @@ export function EditorSurface({
   const visibleElements = useMemo(
     () => getVisibleElements(elements, view, surfaceSize),
     [elements, surfaceSize, view],
+  );
+
+  const contentBounds = useMemo<Bounds | null>(() => {
+    if (elements.length === 0) {
+      return null;
+    }
+
+    return elements.reduce<Bounds>(
+      (bounds, element) => ({
+        minX: Math.min(bounds.minX, element.x),
+        minY: Math.min(bounds.minY, element.y),
+        maxX: Math.max(bounds.maxX, element.x + element.width),
+        maxY: Math.max(bounds.maxY, element.y + element.height),
+      }),
+      {
+        minX: Number.POSITIVE_INFINITY,
+        minY: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        maxY: Number.NEGATIVE_INFINITY,
+      },
+    );
+  }, [elements]);
+
+  const viewportBounds = useMemo(
+    () => ({
+      minX: -view.x / view.scale,
+      minY: -view.y / view.scale,
+      width: surfaceSize.width / view.scale,
+      height: surfaceSize.height / view.scale,
+    }),
+    [surfaceSize.height, surfaceSize.width, view.scale, view.x, view.y],
   );
 
   useEffect(() => {
@@ -949,6 +986,73 @@ export function EditorSurface({
     }));
   };
 
+  const handleFitToContent = () => {
+    if (!contentBounds) {
+      setView(createViewState());
+      return;
+    }
+
+    const contentWidth = Math.max(1, contentBounds.maxX - contentBounds.minX);
+    const contentHeight = Math.max(1, contentBounds.maxY - contentBounds.minY);
+    const nextScale = clampScale(
+      Math.min(
+        surfaceSize.width / (contentWidth + fitPadding * 2),
+        surfaceSize.height / (contentHeight + fitPadding * 2),
+      ),
+    );
+    const centerX = contentBounds.minX + contentWidth / 2;
+    const centerY = contentBounds.minY + contentHeight / 2;
+
+    setView({
+      x: surfaceSize.width / 2 - centerX * nextScale,
+      y: surfaceSize.height / 2 - centerY * nextScale,
+      scale: nextScale,
+    });
+  };
+
+  const panFromMinimapPoint = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const width = rect.width || minimapWidth;
+    const height = rect.height || minimapHeight;
+    const left = Number.isFinite(rect.left) ? rect.left : 0;
+    const top = Number.isFinite(rect.top) ? rect.top : 0;
+    const pointerX = Number.isFinite(event.clientX) ? event.clientX : left + width / 2;
+    const pointerY = Number.isFinite(event.clientY) ? event.clientY : top + height / 2;
+    const ratioX = Math.max(0, Math.min(1, (pointerX - left) / width));
+    const ratioY = Math.max(0, Math.min(1, (pointerY - top) / height));
+    const worldX = ratioX * canvasWidth;
+    const worldY = ratioY * canvasHeight;
+
+    setView((current) => ({
+      ...current,
+      x: surfaceSize.width / 2 - worldX * current.scale,
+      y: surfaceSize.height / 2 - worldY * current.scale,
+    }));
+  };
+
+  const handleMinimapPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (readOnly) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setIsMinimapDragging(true);
+    panFromMinimapPoint(event);
+  };
+
+  const handleMinimapPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isMinimapDragging) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    panFromMinimapPoint(event);
+  };
+
+  const handleMinimapPointerUp = () => {
+    setIsMinimapDragging(false);
+  };
+
   useEffect(() => {
     if (readOnly) {
       return;
@@ -1028,6 +1132,9 @@ export function EditorSurface({
         <button type="button" onClick={() => handleZoomButton(-0.1)}>
           Zoom Out
         </button>
+        <button type="button" onClick={handleFitToContent}>
+          Fit to Content
+        </button>
         <button type="button" onClick={performUndo} disabled={!canUndo}>
           Undo
         </button>
@@ -1088,6 +1195,57 @@ export function EditorSurface({
         onPointerLeave={handlePointerUp}
         onWheel={handleWheel}
       >
+        <div
+          aria-label="Minimap"
+          role="application"
+          onPointerDown={handleMinimapPointerDown}
+          onPointerMove={handleMinimapPointerMove}
+          onPointerUp={handleMinimapPointerUp}
+          onPointerLeave={handleMinimapPointerUp}
+          style={{
+            position: "absolute",
+            right: 12,
+            bottom: 12,
+            width: `${minimapWidth}px`,
+            height: `${minimapHeight}px`,
+            zIndex: 20,
+            background: "rgba(17, 24, 39, 0.78)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            borderRadius: 8,
+            overflow: "hidden",
+            cursor: "pointer",
+          }}
+        >
+          {elements.map((element) => (
+            <div
+              key={`minimap-${element.id}`}
+              style={{
+                position: "absolute",
+                left: (element.x / canvasWidth) * minimapWidth,
+                top: (element.y / canvasHeight) * minimapHeight,
+                width: Math.max(2, (element.width / canvasWidth) * minimapWidth),
+                height: Math.max(2, (element.height / canvasHeight) * minimapHeight),
+                background:
+                  selection.ids.includes(element.id) ? "#f97316" : "rgba(229, 231, 235, 0.75)",
+                borderRadius: 2,
+              }}
+            />
+          ))}
+          <div
+            aria-label="Viewport indicator"
+            style={{
+              position: "absolute",
+              left: (viewportBounds.minX / canvasWidth) * minimapWidth,
+              top: (viewportBounds.minY / canvasHeight) * minimapHeight,
+              width: (viewportBounds.width / canvasWidth) * minimapWidth,
+              height: (viewportBounds.height / canvasHeight) * minimapHeight,
+              border: "1px solid #22d3ee",
+              background: "rgba(34, 211, 238, 0.12)",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
         <div
           className="viewport"
           style={{
