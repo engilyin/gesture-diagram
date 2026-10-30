@@ -11,6 +11,7 @@ import { ContextPalette, type PaletteAction } from "./ContextPalette";
 import { DocumentPersistenceControls } from "./DocumentPersistenceControls";
 import { SelectionHandles } from "./SelectionHandles";
 import { evaluateAmbiguity, type AmbiguityDecision } from "../editor/ambiguity";
+import { getVisibleElements } from "../editor/culling";
 import {
   attachConnectorEndpoints,
   enforceConnectorInvariants,
@@ -44,10 +45,7 @@ import {
   makeSelection,
 } from "../editor/selection";
 import { createInk } from "../editor/shapes";
-import {
-  resizeElement,
-  type ResizeHandle,
-} from "../editor/transform";
+import { resizeElement, type ResizeHandle } from "../editor/transform";
 import {
   clampScale,
   createViewState,
@@ -73,6 +71,7 @@ export function EditorSurface() {
     null,
   );
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [surfaceSize, setSurfaceSize] = useState({ width: 1024, height: 768 });
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
@@ -92,6 +91,35 @@ export function EditorSurface() {
     [elements, selectedId],
   );
 
+  const visibleElements = useMemo(
+    () => getVisibleElements(elements, view, surfaceSize),
+    [elements, surfaceSize, view],
+  );
+
+  useEffect(() => {
+    if (!surfaceRef.current || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+
+      const nextWidth = Math.max(1, Math.round(entry.contentRect.width));
+      const nextHeight = Math.max(1, Math.round(entry.contentRect.height));
+      setSurfaceSize((current) =>
+        current.width === nextWidth && current.height === nextHeight
+          ? current
+          : { width: nextWidth, height: nextHeight },
+      );
+    });
+
+    observer.observe(surfaceRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!hasSelection(selection)) {
       setSelectedActions([]);
@@ -102,7 +130,9 @@ export function EditorSurface() {
       selection.ids.includes(element.id),
     );
     const canGroup = selection.ids.length > 1;
-    const canUngroup = selectedElements.some((element) => Boolean(element.groupId));
+    const canUngroup = selectedElements.some((element) =>
+      Boolean(element.groupId),
+    );
 
     const nextActions: PaletteAction[] = [
       { id: "convert", label: "Convert", kind: "convert", rank: 1 },
@@ -148,8 +178,8 @@ export function EditorSurface() {
   };
 
   const hitTestElement = (point: Point): DiagramElement | null => {
-    for (let index = elements.length - 1; index >= 0; index -= 1) {
-      const element = elements[index];
+    for (let index = visibleElements.length - 1; index >= 0; index -= 1) {
+      const element = visibleElements[index];
       const padding = element.kind === "line" ? 8 : 0;
       const withinX =
         point.x >= element.x - padding &&
@@ -230,12 +260,16 @@ export function EditorSurface() {
       const selectedElements = elements.filter((element) =>
         selection.ids.includes(element.id),
       );
-      const groupId = selectedElements.find((element) => element.groupId)?.groupId;
+      const groupId = selectedElements.find(
+        (element) => element.groupId,
+      )?.groupId;
       if (!groupId) {
         return;
       }
 
-      applyElementsWithInvariants((current) => ungroupElements(current, groupId));
+      applyElementsWithInvariants((current) =>
+        ungroupElements(current, groupId),
+      );
       return;
     }
 
@@ -613,7 +647,7 @@ export function EditorSurface() {
           }}
         >
           <div className="grid" aria-hidden="true" />
-          {elements.map((element) => {
+          {visibleElements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
             const strokeWidth = element.strokeWidth ?? 2;
             const baseColor = element.color ?? "#1f2937";
