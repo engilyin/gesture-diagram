@@ -32,16 +32,13 @@ Then open the local Vite URL shown in the terminal (usually `http://localhost:51
 ## Verify current iteration status
 
 ```bash
-npm test -- --run
+npm test
+npm run test:smoke
 npm run build
 npm run lint
 ```
 
-Expected now:
-
-- `npm test` ✅ passes
-- `npm run build` ✅ passes
-- `npm run lint` ⚠️ currently fails because ESLint 9 flat config (`eslint.config.js`) has not been migrated yet
+The smoke suite (`npm run test:smoke`) covers the core demo flow: create a diagram element, save/load through browser storage, and import a Mermaid fixture.
 
 ## Collaboration adapter boundary (future-ready)
 
