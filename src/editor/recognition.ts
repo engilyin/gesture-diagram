@@ -1,7 +1,21 @@
 import type { Point, DiagramElement } from "./types";
-import { createDiamond, createEllipse, createLine, createRectangle } from "./shapes";
+import {
+  createDiamond,
+  createEllipse,
+  createLine,
+  createRectangle,
+  createText,
+  createTriangle,
+} from "./shapes";
 
-export type RecognitionKind = "rect" | "ellipse" | "diamond" | "line" | "ink";
+export type RecognitionKind =
+  | "rect"
+  | "ellipse"
+  | "diamond"
+  | "triangle"
+  | "line"
+  | "text"
+  | "ink";
 
 export type RecognitionResult = {
   kind: RecognitionKind;
@@ -82,6 +96,30 @@ function countDiamondVertexHits(
   ).length;
 }
 
+function countTriangleVertexHits(
+  points: Point[],
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+): number {
+  const centerX = (minX + maxX) / 2;
+  const vertices = [
+    { x: centerX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
+  const tolerance = 18;
+
+  return vertices.filter((vertex) =>
+    points.some(
+      (point) =>
+        Math.abs(point.x - vertex.x) <= tolerance &&
+        Math.abs(point.y - vertex.y) <= tolerance,
+    ),
+  ).length;
+}
+
 function countSharpCorners(points: Point[]): number {
   let corners = 0;
   const angleThreshold = 0.85;
@@ -131,6 +169,12 @@ export function recognizeStroke(points: Point[]): RecognitionResult {
 
   const straightness =
     pathLength === 0 ? 0 : pointDistance(start, end) / pathLength;
+  const scribbleLike =
+    width >= 40 &&
+    height >= 4 &&
+    height <= 42 &&
+    pathLength >= width * 1.05 &&
+    straightness <= 0.92;
   const perimeterEstimate = 2 * (width + height);
   const lineLike =
     pathLength > 60 &&
@@ -140,6 +184,7 @@ export function recognizeStroke(points: Point[]): RecognitionResult {
   const cornerCount = countSharpCorners(points);
   const cornerHits = countCornerHits(points, minX, maxX, minY, maxY);
   const diamondVertexHits = countDiamondVertexHits(points, minX, maxX, minY, maxY);
+  const triangleVertexHits = countTriangleVertexHits(points, minX, maxX, minY, maxY);
   const boxLike =
     closed &&
     width > 30 &&
@@ -156,6 +201,13 @@ export function recognizeStroke(points: Point[]): RecognitionResult {
     diamondVertexHits >= 3 &&
     cornerHits <= 1 &&
     aspectRatio > 0.35;
+  const triangleLike =
+    closed &&
+    width > 28 &&
+    height > 28 &&
+    triangleVertexHits >= 3 &&
+    cornerHits <= 2 &&
+    aspectRatio > 0.35;
   const ellipseLike =
     closed &&
     width > 30 &&
@@ -166,6 +218,11 @@ export function recognizeStroke(points: Point[]): RecognitionResult {
     cornerCount <= 8 &&
     aspectRatio > 0.3;
 
+  if (scribbleLike) {
+    const element = createText(minX, minY, width, Math.max(height, 48));
+    return { kind: "text", confidence: 0.8, element };
+  }
+
   if (diamondLike) {
     const element = createDiamond(minX, minY, width, height);
     return { kind: "diamond", confidence: 0.79, element };
@@ -174,6 +231,11 @@ export function recognizeStroke(points: Point[]): RecognitionResult {
   if (ellipseLike) {
     const element = createEllipse(minX, minY, width, height);
     return { kind: "ellipse", confidence: 0.77, element };
+  }
+
+  if (triangleLike) {
+    const element = createTriangle(minX, minY, width, height);
+    return { kind: "triangle", confidence: 0.76, element };
   }
 
   if (boxLike) {

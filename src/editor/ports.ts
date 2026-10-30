@@ -35,6 +35,12 @@ const defaultPortOffsetsByKind: Record<
     { id: "bottom", x: 0.5, y: 1 },
     { id: "left", x: 0, y: 0.5 },
   ],
+  triangle: [
+    { id: "top", x: 0.5, y: 0 },
+    { id: "right", x: 0.82, y: 0.74 },
+    { id: "bottom", x: 0.5, y: 1 },
+    { id: "left", x: 0.18, y: 0.74 },
+  ],
   text: [
     { id: "top", x: 0.5, y: 0 },
     { id: "right", x: 1, y: 0.5 },

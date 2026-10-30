@@ -23,6 +23,7 @@ export {
   createLine,
   createRectangle,
   createText,
+  createTriangle,
 } from "./shapes";
 export { recognizeStroke } from "./recognition";
 export {
