@@ -6,3 +6,19 @@ export function createDocument(): DiagramDocument {
     elements: [],
   };
 }
+
+export function loadDocument(input: DiagramDocument): DiagramDocument {
+  return {
+    version: input.version,
+    elements: [...input.elements],
+    metadata: input.metadata ? { ...input.metadata } : undefined,
+  };
+}
+
+export function saveDocument(document: DiagramDocument): DiagramDocument {
+  return {
+    version: document.version,
+    elements: [...document.elements],
+    metadata: document.metadata ? { ...document.metadata } : undefined,
+  };
+}

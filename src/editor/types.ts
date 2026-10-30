@@ -13,6 +13,10 @@ export type DiagramElement = {
 export type DiagramDocument = {
   version: string;
   elements: DiagramElement[];
+  metadata?: {
+    schemaVersion: string;
+    updatedAt: string;
+  };
 };
 
 export type Point = { x: number; y: number };
