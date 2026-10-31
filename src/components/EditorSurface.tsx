@@ -20,6 +20,12 @@ import {
   enforceConnectorInvariants,
 } from "../editor/connectorGraph";
 import {
+  applyOps,
+  createInverseOps,
+  createOpsFromElementDiff,
+  type DiagramOp,
+} from "../editor/ops";
+import {
   createDocumentFromElements,
   getDocumentElements,
   loadDocument,
@@ -91,7 +97,10 @@ const defaultLayerColor = "#4f46e5";
 const onboardingDismissedStorageKey = "gd-onboarding-overlay-dismissed";
 
 type DragMode = "draw" | "move" | "resize" | "marquee" | null;
-type HistorySnapshot = DiagramElement[];
+type HistoryEntry = {
+  undo: DiagramOp[];
+  redo: DiagramOp[];
+};
 type MarqueeSelection = { start: Point; end: Point };
 type ConnectionDragState = {
   fromId: string;
@@ -291,8 +300,8 @@ export function EditorSurface({
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerWorldRef = useRef<Point | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
-  const undoStackRef = useRef<HistorySnapshot[]>([]);
-  const redoStackRef = useRef<HistorySnapshot[]>([]);
+  const undoStackRef = useRef<HistoryEntry[]>([]);
+  const redoStackRef = useRef<HistoryEntry[]>([]);
   const applyingHistoryRef = useRef(false);
   const clipboardRef = useRef<DiagramElement[] | null>(null);
   const pasteSequenceRef = useRef(0);
@@ -305,16 +314,16 @@ export function EditorSurface({
     return JSON.parse(JSON.stringify(value)) as DiagramElement[];
   }, []);
 
-  const resetHistory = useCallback(
-    (snapshot: DiagramElement[]) => {
-      undoStackRef.current = [cloneElements(snapshot)];
-      redoStackRef.current = [];
-      setHistoryVersion((current) => current + 1);
-    },
-    [cloneElements],
-  );
+  const resetHistory = useCallback((snapshot: DiagramElement[]) => {
+    if (snapshot.length < 0) {
+      return;
+    }
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    setHistoryVersion((current) => current + 1);
+  }, []);
 
-  const canUndo = undoStackRef.current.length > 1;
+  const canUndo = undoStackRef.current.length > 0;
   const canRedo = redoStackRef.current.length > 0;
 
   const summary = useMemo(
@@ -535,7 +544,9 @@ export function EditorSurface({
     (updater: (current: DiagramElement[]) => DiagramElement[]) => {
     setElements((current) => {
       const updated = updater(current);
-      const reconciled = reconcileContainerOwnership(updated);
+      const ops = createOpsFromElementDiff(current, updated);
+      const opApplied = applyOps(current, ops);
+      const reconciled = reconcileContainerOwnership(opApplied);
       const resized = autoSizeContainers(reconciled);
       const repaired = enforceConnectorInvariants(resized);
       const nextElements = repaired.repairedElements;
@@ -544,8 +555,14 @@ export function EditorSurface({
         const currentJson = JSON.stringify(current);
         const nextJson = JSON.stringify(nextElements);
         if (currentJson !== nextJson) {
-          undoStackRef.current.push(cloneElements(nextElements));
-          if (undoStackRef.current.length > 100) {
+          const undoOps = createInverseOps(current, ops);
+          if (undoOps.length > 0 && ops.length > 0) {
+            undoStackRef.current.push({
+              undo: undoOps,
+              redo: ops,
+            });
+          }
+          if (undoStackRef.current.length > 200) {
             undoStackRef.current.shift();
           }
           redoStackRef.current = [];
@@ -555,7 +572,7 @@ export function EditorSurface({
 
       return nextElements;
     });
-  }, [cloneElements]);
+  }, []);
 
   const screenToWorld = (point: { x: number; y: number }) => ({
     x: (point.x - view.x) / view.scale,
@@ -742,39 +759,48 @@ export function EditorSurface({
       return;
     }
 
-    const currentStack = undoStackRef.current;
-    const current = currentStack[currentStack.length - 1];
-    const previous = currentStack[currentStack.length - 2];
-    if (!current || !previous) {
+    const entry = undoStackRef.current.pop();
+    if (!entry) {
       return;
     }
 
     applyingHistoryRef.current = true;
-    redoStackRef.current.push(cloneElements(current));
-    undoStackRef.current.pop();
-    setElements(cloneElements(previous));
+    setElements((current) => {
+      const updated = applyOps(current, entry.undo);
+      const reconciled = reconcileContainerOwnership(updated);
+      const resized = autoSizeContainers(reconciled);
+      const repaired = enforceConnectorInvariants(resized);
+      return repaired.repairedElements;
+    });
+    redoStackRef.current.push(entry);
     setSelection(makeSelection());
     applyingHistoryRef.current = false;
     setHistoryVersion((value) => value + 1);
-  }, [canUndo, cloneElements]);
+  }, [canUndo]);
 
   const performRedo = useCallback(() => {
     if (!canRedo) {
       return;
     }
 
-    const next = redoStackRef.current.pop();
-    if (!next) {
+    const entry = redoStackRef.current.pop();
+    if (!entry) {
       return;
     }
 
     applyingHistoryRef.current = true;
-    undoStackRef.current.push(cloneElements(next));
-    setElements(cloneElements(next));
+    setElements((current) => {
+      const updated = applyOps(current, entry.redo);
+      const reconciled = reconcileContainerOwnership(updated);
+      const resized = autoSizeContainers(reconciled);
+      const repaired = enforceConnectorInvariants(resized);
+      return repaired.repairedElements;
+    });
+    undoStackRef.current.push(entry);
     setSelection(makeSelection());
     applyingHistoryRef.current = false;
     setHistoryVersion((value) => value + 1);
-  }, [canRedo, cloneElements]);
+  }, [canRedo]);
 
   const handlePaletteAction = (action: PaletteAction) => {
     if (readOnly) {
