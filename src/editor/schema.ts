@@ -21,6 +21,14 @@ function isValidElement(input: unknown): input is DiagramElement {
     typeof candidate.y === 'number' &&
     typeof candidate.width === 'number' &&
     typeof candidate.height === 'number' &&
+    (candidate.textAlignHorizontal == null ||
+      candidate.textAlignHorizontal === "left" ||
+      candidate.textAlignHorizontal === "center" ||
+      candidate.textAlignHorizontal === "right") &&
+    (candidate.textAlignVertical == null ||
+      candidate.textAlignVertical === "top" ||
+      candidate.textAlignVertical === "middle" ||
+      candidate.textAlignVertical === "bottom") &&
     (candidate.rotation == null || typeof candidate.rotation === "number") &&
     (candidate.locked == null || typeof candidate.locked === "boolean") &&
     (candidate.hidden == null || typeof candidate.hidden === "boolean") &&

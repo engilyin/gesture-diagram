@@ -23,6 +23,8 @@ const trackedProperties: DiagramElementPatchProperty[] = [
   "width",
   "height",
   "text",
+  "textAlignHorizontal",
+  "textAlignVertical",
   "locked",
   "hidden",
   "color",

@@ -6,6 +6,8 @@ export type DiagramElement = {
   width: number;
   height: number;
   text?: string;
+  textAlignHorizontal?: "left" | "center" | "right";
+  textAlignVertical?: "top" | "middle" | "bottom";
   locked?: boolean;
   hidden?: boolean;
   color?: string;
