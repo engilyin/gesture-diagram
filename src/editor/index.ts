@@ -54,6 +54,13 @@ export {
   type ConnectorInvariantResult,
 } from "./connectorGraph";
 export {
+  applyOp,
+  applyOps,
+  createInverseOps,
+  createOpsFromElementDiff,
+  type DiagramOp,
+} from "./ops";
+export {
   autoSizeContainers,
   collectOwnedDescendantIds,
   CONTAINER_PADDING,
