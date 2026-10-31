@@ -656,6 +656,69 @@ export function EditorSurface({
     [renderableElements, surfaceSize, view],
   );
 
+  const accessibleElementLabelById = useMemo(() => {
+    const shapeElements = renderableElements.filter(isConnectableElement);
+    const shapeIndexById = new Map(
+      shapeElements.map((element, index) => [element.id, index + 1]),
+    );
+    const shapeLabelById = new Map<string, string>();
+    shapeElements.forEach((element) => {
+      const fallbackIndex = shapeIndexById.get(element.id) ?? 0;
+      const fallbackLabel = `${element.kind} ${fallbackIndex}`;
+      shapeLabelById.set(element.id, element.text?.trim() || fallbackLabel);
+    });
+
+    const labels = new Map<string, string>();
+    renderableElements.forEach((element) => {
+      if (element.kind === "line") {
+        const from = element.connector?.fromId
+          ? shapeLabelById.get(element.connector.fromId) ?? "unknown source"
+          : null;
+        const to = element.connector?.toId
+          ? shapeLabelById.get(element.connector.toId) ?? "unknown target"
+          : null;
+        labels.set(
+          element.id,
+          from && to
+            ? `Connector from ${from} to ${to}`
+            : "Connector",
+        );
+        return;
+      }
+      if (element.kind === "ink") {
+        labels.set(element.id, "Ink stroke");
+        return;
+      }
+      labels.set(
+        element.id,
+        `${element.kind} shape: ${shapeLabelById.get(element.id) ?? element.kind}`,
+      );
+    });
+    return labels;
+  }, [renderableElements]);
+
+  const screenReaderSummary = useMemo(() => {
+    const shapeCount = renderableElements.filter(isConnectableElement).length;
+    const connectorElements = renderableElements.filter(
+      (element) => element.kind === "line" && element.connector,
+    );
+    const connectorCount = connectorElements.length;
+    const connectorSummary = connectorElements
+      .map((element) => accessibleElementLabelById.get(element.id))
+      .filter((label): label is string => Boolean(label))
+      .join(". ");
+
+    const parts = [
+      `${shapeCount} shapes`,
+      `${connectorCount} connectors`,
+      `selection size ${selection.ids.length}`,
+    ];
+    if (connectorSummary) {
+      parts.push(connectorSummary);
+    }
+    return parts.join(". ");
+  }, [accessibleElementLabelById, renderableElements, selection.ids.length]);
+
   const contentBounds = useMemo<Bounds | null>(() => {
     if (elements.length === 0) {
       return null;
@@ -4263,6 +4326,9 @@ export function EditorSurface({
         ref={surfaceRef}
         className="editor-surface"
         aria-label="Diagram canvas"
+        aria-describedby="diagram-screen-reader-summary"
+        role="region"
+        aria-roledescription="Interactive diagram editor surface"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -4280,6 +4346,22 @@ export function EditorSurface({
         }}
         onDrop={handleLibraryDrop}
       >
+        <div
+          id="diagram-screen-reader-summary"
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            padding: 0,
+            margin: -1,
+            overflow: "hidden",
+            clip: "rect(0 0 0 0)",
+            whiteSpace: "nowrap",
+            border: 0,
+          }}
+        >
+          {screenReaderSummary}
+        </div>
         {selectedActions.length > 0 && (
           <ContextPalette
             actions={selectedActions}
@@ -4500,7 +4582,11 @@ export function EditorSurface({
               };
 
               return (
-                <div key={element.id} style={lineStyle} aria-label="Connector">
+                <div
+                  key={element.id}
+                  style={lineStyle}
+                  aria-label={accessibleElementLabelById.get(element.id) ?? "Connector"}
+                >
                   <div
                     style={{
                       width: "100%",
@@ -4589,7 +4675,7 @@ export function EditorSurface({
               return (
                 <div
                   key={element.id}
-                  aria-label={`Shape ${element.kind}`}
+                  aria-label={accessibleElementLabelById.get(element.id) ?? `Shape ${element.kind}`}
                   data-element-id={element.id}
                   style={{
                     position: "absolute",
@@ -4637,7 +4723,7 @@ export function EditorSurface({
               return (
                 <div
                   key={element.id}
-                  aria-label={`Shape ${element.kind}`}
+                  aria-label={accessibleElementLabelById.get(element.id) ?? `Shape ${element.kind}`}
                   data-element-id={element.id}
                   style={{
                     position: "absolute",
@@ -4685,7 +4771,7 @@ export function EditorSurface({
               return (
                 <div
                   key={element.id}
-                  aria-label={`Shape ${element.kind}`}
+                  aria-label={accessibleElementLabelById.get(element.id) ?? `Shape ${element.kind}`}
                   data-element-id={element.id}
                   style={style}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
@@ -4727,7 +4813,7 @@ export function EditorSurface({
               return (
                 <div
                   key={element.id}
-                  aria-label={`Shape ${element.kind}`}
+                  aria-label={accessibleElementLabelById.get(element.id) ?? `Shape ${element.kind}`}
                   data-element-id={element.id}
                   data-drop-target={isContainerDropTarget ? "true" : undefined}
                   style={{
@@ -4809,7 +4895,7 @@ export function EditorSurface({
               return (
                 <div
                   key={element.id}
-                  aria-label={`Shape ${element.kind}`}
+                  aria-label={accessibleElementLabelById.get(element.id) ?? `Shape ${element.kind}`}
                   data-element-id={element.id}
                   style={{
                     ...style,
@@ -4830,7 +4916,7 @@ export function EditorSurface({
             return (
               <div
                 key={element.id}
-                aria-label={`Shape ${element.kind}`}
+                aria-label={accessibleElementLabelById.get(element.id) ?? `Shape ${element.kind}`}
                 data-element-id={element.id}
                 style={style}
                 onDoubleClick={(event) => handleElementDoubleClick(element, event)}
