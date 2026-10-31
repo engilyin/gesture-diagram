@@ -9,7 +9,7 @@ interface ConnectionPortsProps {
   ) => void;
 }
 
-const targetSize = 14;
+const targetSize = 16;
 
 export function ConnectionPorts({ ports, onPortPointerDown }: ConnectionPortsProps) {
   if (ports.length === 0) {

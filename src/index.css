@@ -10,9 +10,9 @@
   --gd-line-height: 1.5;
 
   --gd-space-1: 0.5rem;
-  --gd-space-2: 0.75rem;
-  --gd-space-3: 0.8rem;
-  --gd-space-4: 1rem;
+  --gd-space-2: 1rem;
+  --gd-space-3: 1.5rem;
+  --gd-space-4: 2rem;
 
   --gd-radius-sm: 0.5rem;
   --gd-radius-md: 0.65rem;
@@ -51,6 +51,10 @@
   --gd-color-selection-handle-border: #f97316;
   --gd-color-selection-handle-bg: #ffffff;
   --gd-color-selection-handle-shadow: rgba(15, 23, 42, 0.2);
+  --gd-color-selection-handle-hover: #ea580c;
+  --gd-size-selection-handle: 16px;
+  --gd-size-rotation-handle: 16px;
+  --gd-size-connection-port: 16px;
 
   --gd-color-connection-port-border: #0e7490;
   --gd-color-connection-port-bg: #22d3ee;
@@ -209,20 +213,74 @@ button {
 .editor-shell {
   display: flex;
   flex-direction: column;
-  gap: var(--gd-space-2);
+  gap: var(--gd-space-1);
   height: 100%;
-  padding: var(--gd-space-4);
+  padding: var(--gd-space-2);
 }
 
 .toolbar {
   display: flex;
   align-items: center;
-  gap: var(--gd-space-2);
-  padding: var(--gd-space-2) var(--gd-space-4);
+  justify-content: space-between;
+  gap: var(--gd-space-1);
+  padding: var(--gd-space-1) var(--gd-space-2);
   background: var(--gd-color-toolbar-bg);
   border: 1px solid var(--gd-color-toolbar-border);
-  border-radius: var(--gd-radius-lg);
+  border-radius: var(--gd-radius-md);
   box-shadow: 0 10px 30px var(--gd-color-toolbar-shadow);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.toolbar-overflow {
+  position: relative;
+  margin-left: auto;
+}
+
+.toolbar-overflow-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 176px;
+  padding: 8px;
+  border: 1px solid var(--gd-color-border);
+  border-radius: var(--gd-radius-md);
+  background: var(--gd-color-surface);
+  box-shadow: 0 12px 28px var(--gd-color-toolbar-shadow);
+  display: grid;
+  gap: 8px;
+}
+
+.editor-workbench {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  gap: 8px;
+}
+
+.editor-sidebar {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.editor-sidebar-left {
+  grid-column: 1;
+}
+
+.editor-sidebar-right {
+  grid-column: 3;
+}
+
+.editor-canvas-panel {
+  grid-column: 2;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 8px;
 }
 
 .onboarding-overlay {
@@ -489,10 +547,10 @@ button {
 
 .selection-handle {
   position: absolute;
-  width: 12px;
-  height: 12px;
-  min-width: 12px;
-  min-height: 12px;
+  width: var(--gd-size-selection-handle);
+  height: var(--gd-size-selection-handle);
+  min-width: var(--gd-size-selection-handle);
+  min-height: var(--gd-size-selection-handle);
   padding: 0;
   border-radius: var(--gd-radius-round);
   border: 1px solid var(--gd-color-selection-handle-border);
@@ -503,15 +561,21 @@ button {
 
 .rotation-handle {
   position: absolute;
-  width: 10px;
-  height: 10px;
-  min-width: 10px;
-  min-height: 10px;
+  width: var(--gd-size-rotation-handle);
+  height: var(--gd-size-rotation-handle);
+  min-width: var(--gd-size-rotation-handle);
+  min-height: var(--gd-size-rotation-handle);
   padding: 0;
   border-radius: var(--gd-radius-round);
-  border: 1px dashed var(--gd-color-selection-handle-border);
+  border: 1px solid var(--gd-color-selection-handle-border);
   background: transparent;
   pointer-events: auto;
+}
+
+.selection-handle:hover,
+.rotation-handle:hover {
+  border-color: var(--gd-color-selection-handle-hover);
+  box-shadow: 0 0 0 2px var(--gd-color-selection-handle-shadow);
 }
 
 .connection-ports {
@@ -529,6 +593,10 @@ button {
   box-shadow: 0 2px 6px var(--gd-color-connection-port-shadow);
   pointer-events: auto;
   cursor: crosshair;
+}
+
+.connection-port:hover {
+  transform: scale(1.08);
 }
 
 .editor-surface {

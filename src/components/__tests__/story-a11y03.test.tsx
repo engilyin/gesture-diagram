@@ -24,7 +24,8 @@ describe("STORY-A11Y03 onboarding cheat-sheet overlay", () => {
     expect(screen.queryByRole("dialog", { name: "Editor onboarding" })).not.toBeInTheDocument();
     expect(window.localStorage.getItem(dismissedKey)).toBe("1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cheat Sheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Cheat Sheet" }));
     expect(screen.getByRole("dialog", { name: "Editor onboarding" })).toBeInTheDocument();
   });
 });
