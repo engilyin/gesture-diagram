@@ -8,6 +8,7 @@ export type DiagramElement = {
   text?: string;
   textAlignHorizontal?: "left" | "center" | "right";
   textAlignVertical?: "top" | "middle" | "bottom";
+  textOverflowMode?: "grow-shape" | "shrink-text";
   locked?: boolean;
   hidden?: boolean;
   color?: string;

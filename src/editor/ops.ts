@@ -25,6 +25,7 @@ const trackedProperties: DiagramElementPatchProperty[] = [
   "text",
   "textAlignHorizontal",
   "textAlignVertical",
+  "textOverflowMode",
   "locked",
   "hidden",
   "color",
