@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "lint": "eslint . --ext ts,tsx --max-warnings 0",
+    "license:audit": "node scripts/license-audit.mjs",
     "test": "vitest run",
     "test:smoke": "vitest run src/test/smoke/editorSmoke.test.tsx"
   },
@@ -31,6 +32,7 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.0",
     "jsdom": "^25.0.1",
+    "license-checker": "^25.0.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.8"
