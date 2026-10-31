@@ -49,6 +49,7 @@ import {
   ungroupElements,
 } from "../editor/grouping";
 import { normalizeStroke } from "../editor/input";
+import { applyAutoLayout, type AutoLayoutAlgorithm } from "../editor/layout";
 import {
   loadFromBrowserStorage,
   saveToBrowserStorage,
@@ -378,6 +379,7 @@ export function EditorSurface({
   const [outlineFilter, setOutlineFilter] = useState("");
   const [collapsedOutlineLayers, setCollapsedOutlineLayers] = useState<string[]>([]);
   const [collapsedOutlineGroups, setCollapsedOutlineGroups] = useState<string[]>([]);
+  const [isLayoutDialogOpen, setIsLayoutDialogOpen] = useState(false);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -3147,6 +3149,13 @@ export function EditorSurface({
     });
   }, [filteredOutlineElements, layers]);
 
+  const handleApplyAutoLayout = (algorithm: AutoLayoutAlgorithm) => {
+    applyElementsWithInvariants((current) =>
+      applyAutoLayout(current, algorithm, selection.ids),
+    );
+    setIsLayoutDialogOpen(false);
+  };
+
   return (
     <div className="editor-shell">
       <div className="toolbar" aria-label="Editor controls">
@@ -3159,6 +3168,11 @@ export function EditorSurface({
         <button type="button" onClick={handleFitToContent}>
           Fit to Content
         </button>
+        {!readOnly && (
+          <button type="button" onClick={() => setIsLayoutDialogOpen(true)}>
+            Layout
+          </button>
+        )}
         <button type="button" onClick={performUndo} disabled={!canUndo}>
           Undo
         </button>
@@ -3209,6 +3223,31 @@ export function EditorSurface({
             <div className="onboarding-actions">
               <button type="button" onClick={handleCloseOnboarding}>
                 Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!readOnly && isLayoutDialogOpen && (
+        <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Layout dialog">
+          <div className="onboarding-panel">
+            <h2>Apply Layout</h2>
+            <p>Choose an algorithm for whole diagram or current selection.</p>
+            <div className="onboarding-actions">
+              <button type="button" onClick={() => handleApplyAutoLayout("layered")}>
+                Layered
+              </button>
+              <button type="button" onClick={() => handleApplyAutoLayout("tree")}>
+                Tree
+              </button>
+              <button type="button" onClick={() => handleApplyAutoLayout("radial")}>
+                Radial
+              </button>
+              <button type="button" onClick={() => handleApplyAutoLayout("grid")}>
+                Grid
+              </button>
+              <button type="button" onClick={() => setIsLayoutDialogOpen(false)}>
+                Cancel
               </button>
             </div>
           </div>
