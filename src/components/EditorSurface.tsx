@@ -6,8 +6,10 @@ import {
   useState,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { GestureFallbackPanel } from "./GestureFallbackPanel";
 import {
@@ -76,6 +78,12 @@ import {
   getCycledSelectionId,
   nudgeSelectedElements,
 } from "../editor/keyboardNavigation";
+import {
+  applyLinkToSelection,
+  parseRichTextSegments,
+  toggleTextWrap,
+  type TextSelectionPatch,
+} from "../editor/richText";
 import { resolveElementPorts } from "../editor/ports";
 import { recognizeStroke } from "../editor/recognition";
 import {
@@ -438,6 +446,7 @@ export function EditorSurface({
     null,
   );
   const [textDraft, setTextDraft] = useState("");
+  const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const [, setHistoryVersion] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerWorldRef = useRef<Point | null>(null);
@@ -2673,6 +2682,85 @@ export function EditorSurface({
     setEditingTextElementId(null);
   }, [applyElementsWithInvariants, editingTextElementId, textDraft]);
 
+  const applyTextPatch = useCallback((patch: TextSelectionPatch) => {
+    setTextDraft(patch.value);
+    requestAnimationFrame(() => {
+      textEditorRef.current?.focus();
+      textEditorRef.current?.setSelectionRange(
+        patch.selectionStart,
+        patch.selectionEnd,
+      );
+    });
+  }, []);
+
+  const handleTextEditorShortcut = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) {
+        return;
+      }
+      const target = event.currentTarget;
+      const selectionStart = target.selectionStart ?? 0;
+      const selectionEnd = target.selectionEnd ?? selectionStart;
+      const key = event.key.toLowerCase();
+
+      if (key === "b") {
+        event.preventDefault();
+        applyTextPatch(
+          toggleTextWrap(textDraft, selectionStart, selectionEnd, "**"),
+        );
+        return;
+      }
+
+      if (key === "i") {
+        event.preventDefault();
+        applyTextPatch(toggleTextWrap(textDraft, selectionStart, selectionEnd, "*"));
+        return;
+      }
+
+      if (key === "k") {
+        event.preventDefault();
+        const href = window.prompt("Enter link URL", "https://");
+        if (!href) {
+          return;
+        }
+        const trimmedHref = href.trim();
+        if (!trimmedHref) {
+          return;
+        }
+        applyTextPatch(
+          applyLinkToSelection(textDraft, selectionStart, selectionEnd, trimmedHref),
+        );
+      }
+    },
+    [applyTextPatch, textDraft],
+  );
+
+  const renderRichText = useCallback((value: string): ReactNode => {
+    return parseRichTextSegments(value).map((segment, index) => {
+      const key = `${segment.kind}-${index}`;
+      if (segment.kind === "bold") {
+        return <strong key={key}>{segment.value}</strong>;
+      }
+      if (segment.kind === "italic") {
+        return <em key={key}>{segment.value}</em>;
+      }
+      if (segment.kind === "link") {
+        return (
+          <a
+            key={key}
+            href={segment.href}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {segment.value}
+          </a>
+        );
+      }
+      return <span key={key}>{segment.value}</span>;
+    });
+  }, []);
+
   const handleResizeStart = (
     handle: ResizeHandle,
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -4303,7 +4391,7 @@ export function EditorSurface({
                     />
                   </svg>
                   {element.text?.trim() ? (
-                    <div style={centeredLabelStyle}>{element.text}</div>
+                    <div style={centeredLabelStyle}>{renderRichText(element.text)}</div>
                   ) : null}
                 </div>
               );
@@ -4351,7 +4439,7 @@ export function EditorSurface({
                     />
                   </svg>
                   {element.text?.trim() ? (
-                    <div style={centeredLabelStyle}>{element.text}</div>
+                    <div style={centeredLabelStyle}>{renderRichText(element.text)}</div>
                   ) : null}
                 </div>
               );
@@ -4390,7 +4478,7 @@ export function EditorSurface({
                     }}
                   >
                     {element.text && element.text.length > 0
-                      ? element.text
+                      ? renderRichText(element.text)
                       : "Type text"}
                   </div>
                 </div>
@@ -4497,7 +4585,7 @@ export function EditorSurface({
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
                   {element.text?.trim() ? (
-                    <div style={centeredLabelStyle}>{element.text}</div>
+                    <div style={centeredLabelStyle}>{renderRichText(element.text)}</div>
                   ) : null}
                 </div>
               );
@@ -4512,7 +4600,7 @@ export function EditorSurface({
                 onDoubleClick={(event) => handleElementDoubleClick(element, event)}
               >
                 {element.text?.trim() ? (
-                  <div style={centeredLabelStyle}>{element.text}</div>
+                  <div style={centeredLabelStyle}>{renderRichText(element.text)}</div>
                 ) : null}
               </div>
             );
@@ -4669,6 +4757,7 @@ export function EditorSurface({
                 <textarea
                   aria-label="Edit text element"
                   autoFocus
+                  ref={textEditorRef}
                   value={textDraft}
                   onChange={(event) => setTextDraft(event.target.value)}
                   onBlur={commitTextEdit}
@@ -4681,7 +4770,9 @@ export function EditorSurface({
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
                       commitTextEdit();
+                      return;
                     }
+                    handleTextEditorShortcut(event);
                   }}
                   style={{
                     position: "absolute",
