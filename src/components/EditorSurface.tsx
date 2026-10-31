@@ -47,6 +47,7 @@ import {
 } from "../editor/persistence/fileWorkflow";
 import { exportSvg } from "../editor/export/svg";
 import { exportPng } from "../editor/export/png";
+import { exportPdf } from "../editor/export/pdf";
 import { importDrawIo } from "../editor/import/drawio";
 import { importMermaid } from "../editor/import/mermaid";
 import {
@@ -956,6 +957,29 @@ export function EditorSurface({
     }
   };
 
+  const handleExportPdf = async () => {
+    try {
+      const blob = await exportPdf(buildDocument());
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename().replace(/\.yaml$/, ".pdf");
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage("Exported PDF file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `PDF export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
   const handleImport = async (file: File) => {
     try {
       const lowerName = file.name.toLowerCase();
@@ -1780,6 +1804,7 @@ export function EditorSurface({
           onExportYaml={handleExport}
           onExportSvg={handleExportSvg}
           onExportPng={handleExportPng}
+          onExportPdf={handleExportPdf}
           onImport={handleImport}
         />
       )}
