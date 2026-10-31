@@ -331,6 +331,10 @@ function supportsInlineTextEditing(element: DiagramElement): boolean {
   return element.kind !== "line" && element.kind !== "ink";
 }
 
+function isConnectableElement(element: DiagramElement): boolean {
+  return element.kind !== "line" && element.kind !== "ink";
+}
+
 type TextAlignHorizontal = "left" | "center" | "right";
 type TextAlignVertical = "top" | "middle" | "bottom";
 
@@ -428,6 +432,9 @@ export function EditorSurface({
     null,
   );
   const [connectionDrag, setConnectionDrag] = useState<ConnectionDragState | null>(
+    null,
+  );
+  const [keyboardConnectSourceId, setKeyboardConnectSourceId] = useState<string | null>(
     null,
   );
   const rotateDragRef = useRef<RotateDragState | null>(null);
@@ -2882,6 +2889,83 @@ export function EditorSurface({
     [applyElementsWithInvariants, elements, isElementInteractionLocked, selection.ids],
   );
 
+  const createKeyboardShape = useCallback(
+    (kind: "rect" | "text") => {
+      const centerWorld: Point = {
+        x: (surfaceSize.width / 2 - view.x) / view.scale,
+        y: (surfaceSize.height / 2 - view.y) / view.scale,
+      };
+      const baseElement =
+        kind === "text"
+          ? createText(centerWorld.x - 80, centerWorld.y - 28, 160, 56)
+          : createRectangle(centerWorld.x - 80, centerWorld.y - 48, 160, 96);
+      const nextElement = assignLayerToElement({
+        ...baseElement,
+        x: snapToGrid(baseElement.x),
+        y: snapToGrid(baseElement.y),
+      });
+      applyElementsWithInvariants((current) => [...current, nextElement]);
+      setSelection(makeSelection([nextElement.id]));
+      setKeyboardConnectSourceId(null);
+      setPersistenceMessage(
+        kind === "text"
+          ? "Created text shape with keyboard."
+          : "Created rectangle with keyboard.",
+      );
+      if (supportsInlineTextEditing(nextElement)) {
+        startInlineTextEdit(nextElement);
+      }
+    },
+    [
+      applyElementsWithInvariants,
+      assignLayerToElement,
+      setPersistenceMessage,
+      startInlineTextEdit,
+      surfaceSize.height,
+      surfaceSize.width,
+      view.scale,
+      view.x,
+      view.y,
+    ],
+  );
+
+  const createKeyboardConnector = useCallback(
+    (sourceId: string, targetId: string) => {
+      if (sourceId === targetId) {
+        return false;
+      }
+      const source = elements.find((element) => element.id === sourceId);
+      const target = elements.find((element) => element.id === targetId);
+      if (!source || !target || !isConnectableElement(source) || !isConnectableElement(target)) {
+        return false;
+      }
+      const fromCenter = getElementCenter(source);
+      const toCenter = getElementCenter(target);
+      const nextConnector = assignLayerToElement(
+        createLine(
+          Math.min(fromCenter.x, toCenter.x),
+          Math.min(fromCenter.y, toCenter.y),
+          Math.abs(toCenter.x - fromCenter.x),
+          Math.abs(toCenter.y - fromCenter.y),
+        ),
+      );
+      applyElementsWithInvariants((current) => [
+        ...current,
+        {
+          ...nextConnector,
+          connector: {
+            fromId: source.id,
+            toId: target.id,
+          },
+        },
+      ]);
+      setSelection(makeSelection([nextConnector.id]));
+      setPersistenceMessage("Created connector with keyboard.");
+      return true;
+    },
+    [applyElementsWithInvariants, assignLayerToElement, elements],
+  );
+
   useEffect(() => {
     if (readOnly) {
       return;
@@ -2903,6 +2987,61 @@ export function EditorSurface({
         event.preventDefault();
         cycleSelection(event.shiftKey ? -1 : 1);
         return;
+      }
+
+      if (key === "escape" && keyboardConnectSourceId) {
+        event.preventDefault();
+        setKeyboardConnectSourceId(null);
+        setPersistenceMessage("Cancelled keyboard connector mode.");
+        return;
+      }
+
+      if (key === "n" && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        createKeyboardShape("rect");
+        return;
+      }
+
+      if (key === "t" && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        createKeyboardShape("text");
+        return;
+      }
+
+      if (
+        key === "enter" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        selection.ids.length === 1
+      ) {
+        const selected = elements.find((element) => element.id === selection.ids[0]);
+        if (selected && supportsInlineTextEditing(selected)) {
+          event.preventDefault();
+          startInlineTextEdit(selected);
+          return;
+        }
+      }
+
+      if (key === "k" && !event.ctrlKey && !event.metaKey && selection.ids.length === 1) {
+        const selected = elements.find((element) => element.id === selection.ids[0]);
+        if (selected && isConnectableElement(selected)) {
+          event.preventDefault();
+          if (!keyboardConnectSourceId) {
+            setKeyboardConnectSourceId(selected.id);
+            setPersistenceMessage("Connector source selected. Tab to target, then press K.");
+            return;
+          }
+          if (keyboardConnectSourceId === selected.id) {
+            setPersistenceMessage("Select a different target shape to connect.");
+            return;
+          }
+          const created = createKeyboardConnector(keyboardConnectSourceId, selected.id);
+          setKeyboardConnectSourceId(null);
+          if (!created) {
+            setPersistenceMessage("Could not create keyboard connector.");
+          }
+          return;
+        }
       }
 
       const nudgeStep = event.shiftKey ? 64 : 16;
@@ -2971,15 +3110,21 @@ export function EditorSurface({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    createKeyboardConnector,
+    createKeyboardShape,
     copySelection,
     cutSelection,
     cycleSelection,
     duplicateSelection,
+    elements,
+    keyboardConnectSourceId,
     nudgeSelection,
     pasteClipboard,
     performRedo,
     performUndo,
     readOnly,
+    selection.ids,
+    startInlineTextEdit,
   ]);
 
   useEffect(() => {
@@ -2996,6 +3141,15 @@ export function EditorSurface({
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, [isOnboardingOpen]);
+
+  useEffect(() => {
+    if (!keyboardConnectSourceId) {
+      return;
+    }
+    if (!elements.some((element) => element.id === keyboardConnectSourceId)) {
+      setKeyboardConnectSourceId(null);
+    }
+  }, [elements, keyboardConnectSourceId]);
 
   const handleOpenOnboarding = () => {
     setIsOnboardingOpen(true);
