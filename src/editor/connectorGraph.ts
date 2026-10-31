@@ -33,6 +33,55 @@ function elementCenter(element: DiagramElement): Point {
   };
 }
 
+function pointOnElementBorderToward(
+  element: DiagramElement,
+  target: Point,
+): Point {
+  const center = elementCenter(element);
+  const dx = target.x - center.x;
+  const dy = target.y - center.y;
+
+  if (dx === 0 && dy === 0) {
+    return center;
+  }
+
+  const halfWidth = element.width / 2;
+  const halfHeight = element.height / 2;
+  const scaleX = dx === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(dx);
+  const scaleY = dy === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy);
+  const scale = Math.min(scaleX, scaleY);
+
+  return {
+    x: center.x + dx * scale,
+    y: center.y + dy * scale,
+  };
+}
+
+function getCollapsedAncestor(
+  element: DiagramElement,
+  elementsById: Map<string, DiagramElement>,
+): DiagramElement | null {
+  const visited = new Set<string>();
+  let parentId = element.parentId;
+
+  while (parentId) {
+    if (visited.has(parentId)) {
+      break;
+    }
+    visited.add(parentId);
+    const parent = elementsById.get(parentId);
+    if (!parent) {
+      break;
+    }
+    if (parent.kind === "container" && parent.collapsed) {
+      return parent;
+    }
+    parentId = parent.parentId;
+  }
+
+  return null;
+}
+
 export function attachConnectorEndpoints(
   elements: DiagramElement[],
   connector: DiagramElement,
@@ -93,12 +142,27 @@ export function enforceConnectorInvariants(
       };
     }
 
-    const fromCenter = elementCenter(from);
-    const toCenter = elementCenter(to);
-    const nextX = Math.min(fromCenter.x, toCenter.x);
-    const nextY = Math.min(fromCenter.y, toCenter.y);
-    const nextWidth = Math.max(12, Math.abs(toCenter.x - fromCenter.x));
-    const nextHeight = Math.max(12, Math.abs(toCenter.y - fromCenter.y));
+    const fromAnchorContainer = getCollapsedAncestor(from, elementsById);
+    const toAnchorContainer = getCollapsedAncestor(to, elementsById);
+    const fromAnchor = fromAnchorContainer ?? from;
+    const toAnchor = toAnchorContainer ?? to;
+
+    const fromAnchorCenter = elementCenter(fromAnchor);
+    const toAnchorCenter = elementCenter(toAnchor);
+
+    const fromPoint =
+      fromAnchorContainer != null
+        ? pointOnElementBorderToward(fromAnchor, toAnchorCenter)
+        : fromAnchorCenter;
+    const toPoint =
+      toAnchorContainer != null
+        ? pointOnElementBorderToward(toAnchor, fromAnchorCenter)
+        : toAnchorCenter;
+
+    const nextX = Math.min(fromPoint.x, toPoint.x);
+    const nextY = Math.min(fromPoint.y, toPoint.y);
+    const nextWidth = Math.max(12, Math.abs(toPoint.x - fromPoint.x));
+    const nextHeight = Math.max(12, Math.abs(toPoint.y - fromPoint.y));
 
     if (
       element.x !== nextX ||

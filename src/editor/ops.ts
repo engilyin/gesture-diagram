@@ -33,6 +33,7 @@ const trackedProperties: DiagramElementPatchProperty[] = [
   "groupId",
   "parentId",
   "containerLayoutMode",
+  "collapsed",
   "connector",
   "portOffsets",
 ];

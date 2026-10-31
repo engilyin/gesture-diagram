@@ -37,6 +37,7 @@ import {
 } from "../editor/document";
 import {
   autoSizeContainers,
+  COLLAPSED_CONTAINER_HEIGHT,
   collectOwnedDescendantIds,
   getGroupedSelectionIds,
   groupElements,
@@ -227,6 +228,31 @@ function isHorizontalScribbleStroke(points: Point[]): boolean {
     pathLength >= width * 1.05 &&
     startEndDistance <= width * 0.72
   );
+}
+
+function isHiddenByCollapsedAncestor(
+  element: DiagramElement,
+  elementsById: Map<string, DiagramElement>,
+): boolean {
+  let parentId = element.parentId;
+  const visited = new Set<string>();
+
+  while (parentId) {
+    if (visited.has(parentId)) {
+      return false;
+    }
+    visited.add(parentId);
+    const parent = elementsById.get(parentId);
+    if (!parent) {
+      return false;
+    }
+    if (parent.kind === "container" && parent.collapsed) {
+      return true;
+    }
+    parentId = parent.parentId;
+  }
+
+  return false;
 }
 
 function looksLikeTextGesture(points: Point[]): boolean {
@@ -473,17 +499,22 @@ export function EditorSurface({
     return null;
   }, [hoveredElement, isElementInteractionLocked, selectedElement]);
 
+  const renderableElements = useMemo(() => {
+    const layerVisibleElements = elements.filter((element) => {
+      const layerIndex = element.layer ?? 0;
+      return layerByIndex.get(layerIndex)?.visible ?? true;
+    });
+    const elementsById = new Map(
+      layerVisibleElements.map((element) => [element.id, element]),
+    );
+    return layerVisibleElements.filter(
+      (element) => !isHiddenByCollapsedAncestor(element, elementsById),
+    );
+  }, [elements, layerByIndex]);
+
   const visibleElements = useMemo(
-    () =>
-      getVisibleElements(
-        elements.filter((element) => {
-          const layerIndex = element.layer ?? 0;
-          return layerByIndex.get(layerIndex)?.visible ?? true;
-        }),
-        view,
-        surfaceSize,
-      ),
-    [elements, layerByIndex, surfaceSize, view],
+    () => getVisibleElements(renderableElements, view, surfaceSize),
+    [renderableElements, surfaceSize, view],
   );
 
   const contentBounds = useMemo<Bounds | null>(() => {
@@ -672,10 +703,22 @@ export function EditorSurface({
                 kind: "layout-grid" as const,
                 rank: 16,
               },
+              {
+                id: selectedContainer.collapsed
+                  ? "expand-container"
+                  : "collapse-container",
+                label: selectedContainer.collapsed
+                  ? "Expand Container"
+                  : "Collapse Container",
+                kind: selectedContainer.collapsed
+                  ? ("expand-container" as const)
+                  : ("collapse-container" as const),
+                rank: 17,
+              },
             ]
         : []),
       ...(canGroup
-        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 17 }]
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 18 }]
         : []),
       ...(canUngroup
         ? [
@@ -683,17 +726,17 @@ export function EditorSurface({
                 id: "ungroup",
                 label: "Ungroup",
                 kind: "ungroup" as const,
-                rank: 18,
+                rank: 19,
               },
             ]
         : []),
       ...(hasUnlockedSelection
-        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 19 }]
+        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 20 }]
         : []),
       ...(hasLockedSelection
-        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 20 }]
+        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 21 }]
         : []),
-      { id: "delete", label: "Delete", kind: "delete", rank: 21 },
+      { id: "delete", label: "Delete", kind: "delete", rank: 22 },
     ];
 
     setSelectedActions(nextActions);
@@ -1229,6 +1272,26 @@ export function EditorSurface({
       return;
     }
 
+    if (action.kind === "collapse-container" || action.kind === "expand-container") {
+      const target = unlockedSelectedElements[0];
+      if (!target || target.kind !== "container") {
+        return;
+      }
+      const collapsed = action.kind === "collapse-container";
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          element.id === target.id
+            ? {
+                ...element,
+                collapsed,
+              }
+            : element,
+        ),
+      );
+      setSelection(makeSelection([target.id]));
+      return;
+    }
+
     if (action.kind === "lock" || action.kind === "unlock") {
       const targetIds = new Set(getGroupedSelectionIds(elements, selection.ids));
       const lockedState = action.kind === "lock";
@@ -1326,6 +1389,23 @@ export function EditorSurface({
       }
     },
     [readOnly, selectedElement, startInlineTextEdit, updateSelectedElement],
+  );
+
+  const handleContainerCollapseToggle = useCallback(
+    (containerId: string, collapsed: boolean) => {
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          element.id === containerId && element.kind === "container"
+            ? {
+                ...element,
+                collapsed,
+              }
+            : element,
+        ),
+      );
+      setSelection(makeSelection([containerId]));
+    },
+    [applyElementsWithInvariants],
   );
 
   const handleSelectColor = useCallback(
@@ -3534,6 +3614,7 @@ export function EditorSurface({
 
             if (element.kind === "container") {
               const isContainerDropTarget = containerDropTargetId === element.id;
+              const isCollapsed = Boolean(element.collapsed);
               return (
                 <div
                   key={element.id}
@@ -3549,12 +3630,68 @@ export function EditorSurface({
                     boxShadow: isContainerDropTarget
                       ? "0 0 0 2px var(--gd-color-selection-handle-border) inset"
                       : undefined,
+                    overflow: "hidden",
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
-                  {element.text?.trim() ? (
-                    <div style={centeredLabelStyle}>{element.text}</div>
-                  ) : null}
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      width: "100%",
+                      height: `${COLLAPSED_CONTAINER_HEIGHT - 8}px`,
+                      padding: "6px 8px",
+                      borderBottom: "1px solid var(--gd-color-divider, rgba(15, 23, 42, 0.16))",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "rgba(148, 163, 184, 0.12)",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-label={isCollapsed ? "Expand container" : "Collapse container"}
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleContainerCollapseToggle(element.id, !isCollapsed);
+                      }}
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 6,
+                        border: "1px solid var(--gd-color-selection-handle-border)",
+                        background: "var(--gd-color-surface, #fff)",
+                        color: "var(--gd-color-selection-handle-border)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 12,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {isCollapsed ? "▸" : "▾"}
+                    </button>
+                    <div
+                      style={{
+                        color: "var(--gd-color-text)",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {element.text?.trim() || "Container"}
+                    </div>
+                  </div>
                 </div>
               );
             }

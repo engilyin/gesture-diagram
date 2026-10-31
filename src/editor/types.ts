@@ -16,6 +16,7 @@ export type DiagramElement = {
   groupId?: string;
   parentId?: string;
   containerLayoutMode?: "free" | "row" | "column" | "grid";
+  collapsed?: boolean;
   connector?: {
     fromId: string;
     toId: string;
