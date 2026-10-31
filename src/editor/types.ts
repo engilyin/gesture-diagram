@@ -14,6 +14,7 @@ export type DiagramElement = {
   color?: string;
   strokeWidth?: number;
   styleVariant?: "filled" | "outlined" | "dashed";
+  styleTokenId?: string;
   rotation?: number;
   points?: Point[];
   layer?: number;
@@ -31,6 +32,14 @@ export type DiagramElement = {
     x: number;
     y: number;
   }>;
+};
+
+export type DiagramStyleToken = {
+  id: string;
+  name: string;
+  color?: string;
+  fontSize?: number;
+  strokeWidth?: number;
 };
 
 export type DiagramLayer = {
@@ -52,6 +61,7 @@ export type DiagramDocument = {
       height?: number;
     };
     layers?: DiagramLayer[];
+    styleTokens?: DiagramStyleToken[];
   };
   metadata?: {
     schemaVersion: string;

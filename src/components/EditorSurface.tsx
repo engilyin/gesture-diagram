@@ -107,7 +107,12 @@ import {
   createViewState,
   type ViewState,
 } from "../editor/viewport";
-import type { DiagramDocument, DiagramElement, Point } from "../editor/types";
+import type {
+  DiagramDocument,
+  DiagramElement,
+  DiagramStyleToken,
+  Point,
+} from "../editor/types";
 import { findSnapGuide, snapToGrid, type SnapGuide } from "../editor/snapping";
 
 const canvasWidth = 1600;
@@ -377,6 +382,16 @@ function createDefaultLayer(): EditorLayer {
   };
 }
 
+function createDefaultStyleToken(index: number): DiagramStyleToken {
+  return {
+    id: crypto.randomUUID(),
+    name: `Token ${index}`,
+    color: "#4f46e5",
+    fontSize: 14,
+    strokeWidth: 2,
+  };
+}
+
 function resolveTextOverflowMode(element: DiagramElement): TextOverflowMode {
   return element.textOverflowMode ?? "grow-shape";
 }
@@ -403,12 +418,13 @@ function resolveShrinkTextFontSize(
   text: string,
   width: number,
   height: number,
+  baseFontSize = baseTextFontSize,
 ): { fontSize: number; lineHeight: number } {
   const lineCount = estimateTextLineCount(text, width);
   const usableHeight = Math.max(24, height - textPaddingY);
   const estimatedHeightAtBase = Math.max(1, lineCount * baseTextLineHeight);
   const scale = Math.min(1, usableHeight / estimatedHeightAtBase);
-  const fontSize = Math.max(10, Math.round(baseTextFontSize * scale));
+  const fontSize = Math.max(10, Math.round(baseFontSize * scale));
   return {
     fontSize,
     lineHeight: Math.max(12, Math.round(fontSize * 1.3)),
@@ -442,12 +458,15 @@ export function EditorSurface({
         document?.settings?.layers && document.settings.layers.length > 0
           ? document.settings.layers.map((layer) => ({ ...layer }))
           : [createDefaultLayer()],
+      styleTokens:
+        document?.settings?.styleTokens?.map((token) => ({ ...token })) ?? [],
     }),
     [
       document?.settings?.background,
       document?.settings?.canvas?.height,
       document?.settings?.canvas?.width,
       document?.settings?.layers,
+      document?.settings?.styleTokens,
       document?.settings?.title,
     ],
   );
@@ -585,6 +604,16 @@ export function EditorSurface({
     }
     return [createDefaultLayer()];
   }, [documentSettings.layers]);
+
+  const styleTokens = useMemo(
+    () => documentSettings.styleTokens ?? [],
+    [documentSettings.styleTokens],
+  );
+
+  const styleTokenById = useMemo(
+    () => new Map(styleTokens.map((token) => [token.id, token])),
+    [styleTokens],
+  );
 
   const layerIndexById = useMemo(
     () => new Map(layers.map((layer, index) => [layer.id, index])),
@@ -1769,6 +1798,19 @@ export function EditorSurface({
     [readOnly, selectedElement, updateSelectedElement],
   );
 
+  const handleSelectStyleToken = useCallback(
+    (styleTokenId?: string) => {
+      if (readOnly || !selectedElement || selectedElement.kind === "ink") {
+        return;
+      }
+      updateSelectedElement((element) => ({
+        ...element,
+        styleTokenId,
+      }));
+    },
+    [readOnly, selectedElement, updateSelectedElement],
+  );
+
   const selectedStyleVariant: PaletteStyleVariant | null = selectedElement
     ? selectedElement.styleVariant ?? getDefaultStyleVariant(selectedElement.kind)
     : null;
@@ -1785,6 +1827,8 @@ export function EditorSurface({
     selectedElement?.kind === "line"
       ? resolveConnectorRouting(selectedElement)
       : undefined;
+  const selectedStyleTokenId: string | undefined =
+    selectedElement?.kind === "ink" ? undefined : selectedElement?.styleTokenId;
 
   const shouldShowShapeCustomizer =
     !readOnly &&
@@ -1837,6 +1881,8 @@ export function EditorSurface({
       document.settings?.layers && document.settings.layers.length > 0
         ? document.settings.layers.map((layer) => ({ ...layer }))
         : [createDefaultLayer()];
+    const incomingStyleTokens =
+      document.settings?.styleTokens?.map((token) => ({ ...token })) ?? [];
     setElements([...document.elements]);
     setDocumentSettings({
       title: document.settings?.title ?? defaultDocumentTitle,
@@ -1846,6 +1892,7 @@ export function EditorSurface({
         height: document.settings?.canvas?.height,
       },
       layers: incomingLayers,
+      styleTokens: incomingStyleTokens,
     });
     setActiveLayerId(incomingLayers[0]?.id ?? "");
     setSelection(makeSelection(initialSelectionIds ?? []));
@@ -1871,6 +1918,8 @@ export function EditorSurface({
       loaded.settings?.layers && loaded.settings.layers.length > 0
         ? loaded.settings.layers.map((layer) => ({ ...layer }))
         : [createDefaultLayer()];
+    const loadedStyleTokens =
+      loaded.settings?.styleTokens?.map((token) => ({ ...token })) ?? [];
     setElements(repaired.repairedElements);
     setDocumentSettings({
       title: loaded.settings?.title ?? defaultDocumentTitle,
@@ -1880,6 +1929,7 @@ export function EditorSurface({
         height: loaded.settings?.canvas?.height,
       },
       layers: loadedLayers,
+      styleTokens: loadedStyleTokens,
     });
     setActiveLayerId(loadedLayers[0]?.id ?? "");
     setSelection(makeSelection());
@@ -3504,6 +3554,29 @@ export function EditorSurface({
     }));
   };
 
+  const handleCreateStyleToken = () => {
+    setDocumentSettings((current) => {
+      const nextTokens = [...(current.styleTokens ?? [])];
+      nextTokens.push(createDefaultStyleToken(nextTokens.length + 1));
+      return {
+        ...current,
+        styleTokens: nextTokens,
+      };
+    });
+  };
+
+  const handleStyleTokenChange = (
+    tokenId: string,
+    patch: Partial<DiagramStyleToken>,
+  ) => {
+    setDocumentSettings((current) => ({
+      ...current,
+      styleTokens: (current.styleTokens ?? []).map((token) =>
+        token.id === tokenId ? { ...token, ...patch } : token,
+      ),
+    }));
+  };
+
   const updateLayers = (updater: (current: EditorLayer[]) => EditorLayer[]) => {
     setDocumentSettings((current) => {
       const currentLayers =
@@ -4059,6 +4132,62 @@ export function EditorSurface({
                 onChange={(event) => handleCanvasHintChange("height", event.target.value)}
               />
             </label>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span>Style tokens</span>
+                <button type="button" onClick={handleCreateStyleToken}>
+                  Add token
+                </button>
+              </div>
+              {(documentSettings.styleTokens ?? []).map((token) => (
+                <div
+                  key={token.id}
+                  style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 6 }}
+                >
+                  <input
+                    aria-label={`Style token name ${token.name}`}
+                    value={token.name}
+                    onChange={(event) =>
+                      handleStyleTokenChange(token.id, {
+                        name: event.target.value.trim().length > 0 ? event.target.value : token.name,
+                      })
+                    }
+                  />
+                  <input
+                    aria-label={`Style token color ${token.name}`}
+                    type="color"
+                    value={token.color ?? "#4f46e5"}
+                    onChange={(event) =>
+                      handleStyleTokenChange(token.id, { color: event.target.value })
+                    }
+                  />
+                  <input
+                    aria-label={`Style token font size ${token.name}`}
+                    type="number"
+                    min={8}
+                    value={token.fontSize ?? 14}
+                    onChange={(event) => {
+                      const nextValue = Number.parseInt(event.target.value, 10);
+                      handleStyleTokenChange(token.id, {
+                        fontSize: Number.isFinite(nextValue) ? nextValue : token.fontSize,
+                      });
+                    }}
+                  />
+                  <input
+                    aria-label={`Style token stroke width ${token.name}`}
+                    type="number"
+                    min={1}
+                    value={token.strokeWidth ?? 2}
+                    onChange={(event) => {
+                      const nextValue = Number.parseInt(event.target.value, 10);
+                      handleStyleTokenChange(token.id, {
+                        strokeWidth: Number.isFinite(nextValue) ? nextValue : token.strokeWidth,
+                      });
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
           </fieldset>
         </aside>
       )}
@@ -4514,6 +4643,13 @@ export function EditorSurface({
                 ? handleSelectConnectorRouting
                 : undefined
             }
+            styleTokens={shouldShowShapeCustomizer ? styleTokens : []}
+            selectedStyleTokenId={
+              shouldShowShapeCustomizer ? selectedStyleTokenId : undefined
+            }
+            onSelectStyleToken={
+              shouldShowShapeCustomizer ? handleSelectStyleToken : undefined
+            }
           />
         )}
 
@@ -4651,8 +4787,15 @@ export function EditorSurface({
           {visibleElements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
             const isConnectionTarget = connectionDrag?.targetId === element.id;
-            const strokeWidth = element.strokeWidth ?? 2;
-            const baseColor = element.color ?? "var(--gd-element-stroke, #1f2937)";
+            const styleToken = element.styleTokenId
+              ? styleTokenById.get(element.styleTokenId)
+              : undefined;
+            const strokeWidth = element.strokeWidth ?? styleToken?.strokeWidth ?? 2;
+            const baseColor =
+              element.color ??
+              styleToken?.color ??
+              "var(--gd-element-stroke, #1f2937)";
+            const baseTokenFontSize = styleToken?.fontSize ?? baseTextFontSize;
             const selectedColor = "var(--gd-color-selection-handle-border)";
             const borderColor = isConnectionTarget
               ? "var(--gd-color-connection-port-bg)"
@@ -4810,8 +4953,16 @@ export function EditorSurface({
             const textOverflowMode = resolveTextOverflowMode(element);
             const textSizing =
               textOverflowMode === "shrink-text" && element.text?.trim()
-                ? resolveShrinkTextFontSize(element.text, element.width, element.height)
-                : { fontSize: baseTextFontSize, lineHeight: baseTextLineHeight };
+                ? resolveShrinkTextFontSize(
+                    element.text,
+                    element.width,
+                    element.height,
+                    baseTokenFontSize,
+                  )
+                : {
+                    fontSize: baseTokenFontSize,
+                    lineHeight: Math.max(12, Math.round(baseTokenFontSize * 1.3)),
+                  };
             const centeredLabelStyle: CSSProperties = {
               position: "absolute",
               inset: 0,

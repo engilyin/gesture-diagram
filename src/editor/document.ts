@@ -22,6 +22,9 @@ export function loadDocument(input: DiagramDocument): DiagramDocument {
           layers: input.settings.layers
             ? input.settings.layers.map((layer) => ({ ...layer }))
             : undefined,
+          styleTokens: input.settings.styleTokens
+            ? input.settings.styleTokens.map((token) => ({ ...token }))
+            : undefined,
         }
       : undefined,
     metadata: input.metadata ? { ...input.metadata } : undefined,
@@ -40,6 +43,9 @@ export function saveDocument(document: DiagramDocument): DiagramDocument {
             : undefined,
           layers: document.settings.layers
             ? document.settings.layers.map((layer) => ({ ...layer }))
+            : undefined,
+          styleTokens: document.settings.styleTokens
+            ? document.settings.styleTokens.map((token) => ({ ...token }))
             : undefined,
         }
       : undefined,
@@ -61,6 +67,9 @@ export function createDocumentFromElements(
           canvas: settings.canvas ? { ...settings.canvas } : undefined,
           layers: settings.layers
             ? settings.layers.map((layer) => ({ ...layer }))
+            : undefined,
+          styleTokens: settings.styleTokens
+            ? settings.styleTokens.map((token) => ({ ...token }))
             : undefined,
         }
       : undefined,
