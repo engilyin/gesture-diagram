@@ -2,6 +2,7 @@ import { moveElement } from './transform';
 import type { DiagramElement } from './types';
 
 export const CONTAINER_PADDING = 24;
+export const COLLAPSED_CONTAINER_HEIGHT = 40;
 const MIN_CONTAINER_WIDTH = 160;
 const MIN_CONTAINER_HEIGHT = 120;
 
@@ -74,8 +75,19 @@ export function reconcileContainerOwnership(
     (a, b) => getElementArea(a) - getElementArea(b),
   );
   const elementsById = new Map(elements.map((element) => [element.id, element]));
+  const containerById = new Map(containers.map((container) => [container.id, container]));
 
   return elements.map((element) => {
+    if (element.parentId) {
+      const existingParent = containerById.get(element.parentId);
+      if (existingParent?.collapsed) {
+        return {
+          ...element,
+          parentId: existingParent.id,
+        };
+      }
+    }
+
     const ancestors = collectAncestorsById(elementsById, element);
     const parent = sortedContainers.find((container) => {
       if (container.id === element.id || ancestors.has(container.id)) {
@@ -113,6 +125,18 @@ export function autoSizeContainers(
     }
 
     const children = childrenByParent.get(element.id);
+    if (element.collapsed) {
+      if (children && children.length > 0) {
+        const minX = Math.min(...children.map((child) => child.x));
+        const maxX = Math.max(...children.map((child) => child.x + child.width));
+        element.width = Math.max(maxX - minX + padding * 2, MIN_CONTAINER_WIDTH);
+      } else {
+        element.width = Math.max(element.width, MIN_CONTAINER_WIDTH);
+      }
+      element.height = COLLAPSED_CONTAINER_HEIGHT;
+      return;
+    }
+
     if (!children || children.length === 0) {
       return;
     }

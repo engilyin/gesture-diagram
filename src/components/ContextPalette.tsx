@@ -24,6 +24,8 @@ export type PaletteAction = {
     | "layout-row"
     | "layout-column"
     | "layout-grid"
+    | "collapse-container"
+    | "expand-container"
     | "duplicate"
     | "delete"
     | "group"

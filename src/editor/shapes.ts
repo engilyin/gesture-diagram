@@ -94,6 +94,7 @@ export function createContainer(
     rotation: 0,
     text: "Container",
     containerLayoutMode: "free",
+    collapsed: false,
   };
 }
 
