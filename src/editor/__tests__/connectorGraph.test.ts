@@ -37,7 +37,7 @@ describe('connector graph invariants', () => {
     expect(connected.connector).toEqual({ fromId: 'left', toId: 'right' });
   });
 
-  it('repairs invalid connector references after structural edits', () => {
+  it('removes dangling connector elements after structural edits', () => {
     const repaired = enforceConnectorInvariants([
       rect('left', 20),
       {
@@ -47,7 +47,7 @@ describe('connector graph invariants', () => {
     ]);
 
     expect(repaired.valid).toBe(false);
-    expect(repaired.repairedElements[1].connector).toBeUndefined();
+    expect(repaired.repairedElements.some((element) => element.id === 'c1')).toBe(false);
   });
 
   it('moves all members in a group together preserving relative positions', () => {
