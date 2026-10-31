@@ -19,6 +19,7 @@ export type PaletteAction = {
     | "distribute-vertical"
     | "match-width"
     | "match-height"
+    | "copy-style"
     | "duplicate"
     | "delete"
     | "group"

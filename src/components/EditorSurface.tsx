@@ -126,6 +126,7 @@ type RotateDragState = {
   startAngle: number;
   initialRotation: number;
 };
+type CopiedStyle = Pick<DiagramElement, "color" | "styleVariant">;
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 type ShapeChoice =
@@ -325,6 +326,8 @@ export function EditorSurface({
   );
   const rotateDragRef = useRef<RotateDragState | null>(null);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [copiedStyle, setCopiedStyle] = useState<CopiedStyle | null>(null);
+  const [isFormatPainterActive, setIsFormatPainterActive] = useState(false);
   const [editingTextElementId, setEditingTextElementId] = useState<string | null>(
     null,
   );
@@ -568,60 +571,74 @@ export function EditorSurface({
       Boolean(element.groupId),
     );
     const canArrange = selectedElements.length > 1;
+    const canCopyStyle =
+      selectedElements.length === 1 &&
+      selectedElements[0]?.kind !== "ink" &&
+      !isElementInteractionLocked(selectedElements[0]);
 
     const nextActions: PaletteAction[] = [
       { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 1 },
+      ...(canCopyStyle
+        ? [
+              {
+                id: "copy-style",
+                label: isFormatPainterActive ? "Copy Style (Armed)" : "Copy Style",
+                kind: "copy-style" as const,
+                rank: 2,
+              },
+            ]
+        : []),
       ...(canArrange
         ? [
-              { id: "align-left", label: "Align Left", kind: "align-left" as const, rank: 2 },
+              { id: "align-left", label: "Align Left", kind: "align-left" as const, rank: 3 },
               {
                 id: "align-center",
                 label: "Align Center",
                 kind: "align-center" as const,
-                rank: 3,
+                rank: 4,
               },
-              { id: "align-right", label: "Align Right", kind: "align-right" as const, rank: 4 },
-              { id: "align-top", label: "Align Top", kind: "align-top" as const, rank: 5 },
+              { id: "align-right", label: "Align Right", kind: "align-right" as const, rank: 5 },
+              { id: "align-top", label: "Align Top", kind: "align-top" as const, rank: 6 },
               {
                 id: "align-middle",
                 label: "Align Middle",
                 kind: "align-middle" as const,
-                rank: 6,
+                rank: 7,
               },
               {
                 id: "align-bottom",
                 label: "Align Bottom",
                 kind: "align-bottom" as const,
-                rank: 7,
+                rank: 8,
               },
               {
                 id: "distribute-horizontal",
                 label: "Distribute Horizontal",
                 kind: "distribute-horizontal" as const,
-                rank: 8,
+                rank: 9,
               },
               {
                 id: "distribute-vertical",
                 label: "Distribute Vertical",
                 kind: "distribute-vertical" as const,
-                rank: 9,
+                rank: 10,
               },
               {
                 id: "match-width",
                 label: "Match Width",
                 kind: "match-width" as const,
-                rank: 10,
+                rank: 11,
               },
               {
                 id: "match-height",
                 label: "Match Height",
                 kind: "match-height" as const,
-                rank: 11,
+                rank: 12,
               },
             ]
         : []),
       ...(canGroup
-        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 12 }]
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 13 }]
         : []),
       ...(canUngroup
         ? [
@@ -629,21 +646,21 @@ export function EditorSurface({
                 id: "ungroup",
                 label: "Ungroup",
                 kind: "ungroup" as const,
-                rank: 13,
+                rank: 14,
               },
             ]
         : []),
       ...(hasUnlockedSelection
-        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 14 }]
+        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 15 }]
         : []),
       ...(hasLockedSelection
-        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 15 }]
+        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 16 }]
         : []),
-      { id: "delete", label: "Delete", kind: "delete", rank: 16 },
+      { id: "delete", label: "Delete", kind: "delete", rank: 17 },
     ];
 
     setSelectedActions(nextActions);
-  }, [elements, isElementInteractionLocked, selection]);
+  }, [elements, isElementInteractionLocked, isFormatPainterActive, selection]);
 
   const applyElementsWithInvariants = useCallback(
     (updater: (current: DiagramElement[]) => DiagramElement[]) => {
@@ -1047,6 +1064,19 @@ export function EditorSurface({
 
     if (action.kind === "duplicate") {
       duplicateSelection();
+      return;
+    }
+
+    if (action.kind === "copy-style") {
+      const source = unlockedSelectedElements[0];
+      if (!source || source.kind === "ink") {
+        return;
+      }
+      setCopiedStyle({
+        color: source.color,
+        styleVariant: source.styleVariant,
+      });
+      setIsFormatPainterActive(true);
       return;
     }
 
@@ -1584,9 +1614,70 @@ export function EditorSurface({
     }
 
     const world = screenToWorld(local);
+    const targetElementId =
+      event.target instanceof HTMLElement
+        ? event.target.closest<HTMLElement>("[data-element-id]")?.dataset.elementId
+        : undefined;
+    const directTarget =
+      targetElementId !== undefined
+        ? elements.find((element) => element.id === targetElementId) ?? null
+        : null;
     const hitElement = hitTestElement(world);
 
+    if (
+      directTarget &&
+      isFormatPainterActive &&
+      copiedStyle &&
+      directTarget.kind !== "ink" &&
+      !isElementInteractionLocked(directTarget)
+    ) {
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          element.id === directTarget.id
+            ? {
+                ...element,
+                color: copiedStyle.color,
+                styleVariant: copiedStyle.styleVariant,
+              }
+            : element,
+        ),
+      );
+      setSelection(makeSelection([directTarget.id]));
+      setIsFormatPainterActive(false);
+      setStroke([]);
+      setStrokeGhost(null);
+      setDragMode(null);
+      setSnapGuide(null);
+      return;
+    }
+
     if (hitElement) {
+      if (
+        isFormatPainterActive &&
+        copiedStyle &&
+        hitElement.kind !== "ink" &&
+        !isElementInteractionLocked(hitElement)
+      ) {
+        applyElementsWithInvariants((current) =>
+          current.map((element) =>
+            element.id === hitElement.id
+              ? {
+                  ...element,
+                  color: copiedStyle.color,
+                  styleVariant: copiedStyle.styleVariant,
+                }
+              : element,
+          ),
+        );
+        setSelection(makeSelection([hitElement.id]));
+        setIsFormatPainterActive(false);
+        setStroke([]);
+        setStrokeGhost(null);
+        setDragMode(null);
+        setSnapGuide(null);
+        return;
+      }
+
       if (isElementInteractionLocked(hitElement)) {
         const nextSelection = hitElement.groupId
           ? getGroupedSelectionIds(elements, [hitElement.id])
@@ -3197,6 +3288,7 @@ export function EditorSurface({
                 <div
                   key={element.id}
                   aria-label={`Shape ${element.kind}`}
+                  data-element-id={element.id}
                   style={{
                     position: "absolute",
                     left: element.x,
@@ -3243,6 +3335,7 @@ export function EditorSurface({
                 <div
                   key={element.id}
                   aria-label={`Shape ${element.kind}`}
+                  data-element-id={element.id}
                   style={{
                     position: "absolute",
                     left: element.x,
@@ -3289,6 +3382,7 @@ export function EditorSurface({
                 <div
                   key={element.id}
                   aria-label={`Shape ${element.kind}`}
+                  data-element-id={element.id}
                   style={style}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
@@ -3328,6 +3422,7 @@ export function EditorSurface({
                 <div
                   key={element.id}
                   aria-label={`Shape ${element.kind}`}
+                  data-element-id={element.id}
                   style={{
                     ...style,
                     borderColor,
@@ -3349,6 +3444,7 @@ export function EditorSurface({
                 <div
                   key={element.id}
                   aria-label={`Shape ${element.kind}`}
+                  data-element-id={element.id}
                   style={{
                     ...style,
                     borderRadius: "50%",
@@ -3369,6 +3465,7 @@ export function EditorSurface({
               <div
                 key={element.id}
                 aria-label={`Shape ${element.kind}`}
+                data-element-id={element.id}
                 style={style}
                 onDoubleClick={(event) => handleElementDoubleClick(element, event)}
               >
