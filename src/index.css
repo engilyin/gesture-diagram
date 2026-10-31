@@ -61,7 +61,7 @@
   --gd-color-connection-port-shadow: rgba(15, 23, 42, 0.25);
 
   --gd-color-surface-border: #dfe7f4;
-  --gd-color-grid-line: rgba(148, 163, 184, 0.08);
+  --gd-color-grid-line: rgba(100, 116, 139, 0.28);
   --gd-color-surface-fill: #f8fafc;
   --gd-color-surface-inner-shadow: rgba(15, 23, 42, 0.04);
   --gd-minimap-bg: rgba(17, 24, 39, 0.78);
@@ -281,8 +281,8 @@ button {
 .editor-canvas-panel {
   grid-column: 2;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
@@ -295,6 +295,14 @@ button {
   justify-content: center;
   background: rgba(15, 23, 42, 0.45);
   padding: var(--gd-space-4);
+}
+
+.onboarding-overlay-passive {
+  pointer-events: none;
+}
+
+.onboarding-overlay-passive .onboarding-panel {
+  pointer-events: auto;
 }
 
 .onboarding-panel {
@@ -604,10 +612,14 @@ button {
 
 .editor-surface {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 360px;
+  width: 100%;
   overflow: hidden;
   border-radius: var(--gd-radius-xl);
   border: 1px solid var(--gd-color-surface-border);
+  cursor: crosshair;
+  touch-action: none;
   background:
     repeating-linear-gradient(
       0deg,

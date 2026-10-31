@@ -64,21 +64,27 @@ describe("STORY-C05 marquee and keyboard navigation", () => {
     render(<EditorSurface document={documentWithTwoShapes} />);
 
     const canvas = screen.getByLabelText("Diagram canvas");
+    const viewport = document.querySelector(".viewport") as HTMLElement | null;
+    const transform = viewport?.style.transform ?? "";
+    const match = transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
+    const tx = match ? Number.parseFloat(match[1] ?? "0") : 0;
+    const ty = match ? Number.parseFloat(match[2] ?? "0") : 0;
+
     dispatchPointer(canvas as HTMLElement, "pointerdown", {
       button: 0,
       pointerType: "mouse",
-      clientX: 20,
-      clientY: 20,
+      clientX: tx + 40,
+      clientY: ty + 40,
     });
     dispatchPointer(canvas as HTMLElement, "pointermove", {
       pointerType: "mouse",
-      clientX: 220,
-      clientY: 190,
+      clientX: tx + 170,
+      clientY: ty + 150,
     });
     dispatchPointer(canvas as HTMLElement, "pointerup", {
       pointerType: "mouse",
-      clientX: 220,
-      clientY: 190,
+      clientX: tx + 170,
+      clientY: ty + 150,
     });
     const summary = screen.getByText(/Zoom:/);
 

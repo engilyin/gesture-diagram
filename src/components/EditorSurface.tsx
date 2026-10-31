@@ -539,6 +539,7 @@ export function EditorSurface({
   const [showLeftSidebar, setShowLeftSidebar] = useState(false);
   const [showRightSidebar, setShowRightSidebar] = useState(false);
   const [showFileControls, setShowFileControls] = useState(false);
+  const [isGridVisible, setIsGridVisible] = useState(true);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -853,10 +854,7 @@ export function EditorSurface({
       setIsOnboardingOpen(false);
       return;
     }
-    const dismissed =
-      typeof window !== "undefined" &&
-      window.localStorage.getItem(onboardingDismissedStorageKey) === "1";
-    setIsOnboardingOpen(!dismissed);
+    setIsOnboardingOpen(false);
   }, [readOnly]);
 
   useEffect(() => {
@@ -2518,7 +2516,11 @@ export function EditorSurface({
       const start = stroke[0];
       const width = Math.abs(world.x - start.x);
       const height = Math.abs(world.y - start.y);
-      const canUseMarquee = !event.altKey && event.pointerType !== "pen";
+      const canUseMarquee =
+        !event.altKey &&
+        event.pointerType !== "pen" &&
+        width >= 160 &&
+        height >= 120;
       if (canUseMarquee && stroke.length <= 2 && width >= 24 && height >= 24) {
         setDragMode("marquee");
         setStroke([]);
@@ -3979,6 +3981,13 @@ export function EditorSurface({
             >
               File
             </button>
+            <button
+              type="button"
+              aria-pressed={isGridVisible}
+              onClick={() => setIsGridVisible((current) => !current)}
+            >
+              Grid {isGridVisible ? "On" : "Off"}
+            </button>
           </>
         )}
         <div className="toolbar-overflow">
@@ -4034,7 +4043,12 @@ export function EditorSurface({
         </span>
       </div>
       {!readOnly && isOnboardingOpen && (
-        <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Editor onboarding">
+        <div
+          className="onboarding-overlay onboarding-overlay-passive"
+          role="dialog"
+          aria-modal="false"
+          aria-label="Editor onboarding"
+        >
           <div className="onboarding-panel">
             <h2>Getting started</h2>
             <p>Use gestures, shortcuts, and context tools to build diagrams quickly.</p>
@@ -4736,7 +4750,7 @@ export function EditorSurface({
             transformOrigin: "0 0",
           }}
         >
-          <div className="grid" aria-hidden="true" />
+          {isGridVisible ? <div className="grid" aria-hidden="true" /> : null}
           <ConnectionPorts
             ports={hoveredPorts}
             onPortPointerDown={handlePortPointerDown}

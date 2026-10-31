@@ -8,9 +8,12 @@ describe("STORY-A11Y03 onboarding cheat-sheet overlay", () => {
     window.localStorage.removeItem(dismissedKey);
   });
 
-  it("shows onboarding guidance with gestures and shortcuts for new users", () => {
+  it("is opened from toolbar and shows onboarding guidance", () => {
     render(<EditorSurface />);
 
+    expect(screen.queryByRole("dialog", { name: "Editor onboarding" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Cheat Sheet" }));
     expect(screen.getByRole("dialog", { name: "Editor onboarding" })).toBeInTheDocument();
     expect(screen.getByText("Gestures")).toBeInTheDocument();
     expect(screen.getByText("Keyboard")).toBeInTheDocument();
@@ -20,6 +23,8 @@ describe("STORY-A11Y03 onboarding cheat-sheet overlay", () => {
   it("can be dismissed and reopened from toolbar", () => {
     render(<EditorSurface />);
 
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Cheat Sheet" }));
     fireEvent.click(screen.getByRole("button", { name: "Got it" }));
     expect(screen.queryByRole("dialog", { name: "Editor onboarding" })).not.toBeInTheDocument();
     expect(window.localStorage.getItem(dismissedKey)).toBe("1");

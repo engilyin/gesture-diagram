@@ -9,6 +9,8 @@ describe("STORY-QA04 editor visual layout", () => {
     render(<EditorSurface />);
 
     expect(screen.getByLabelText("Diagram canvas")).toBeInTheDocument();
+    expect(screen.getByText("Grid On")).toBeInTheDocument();
+    expect(document.querySelector(".grid")).toBeInTheDocument();
     expect(screen.queryByLabelText("Left sidebar")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Properties panel")).not.toBeInTheDocument();
 
@@ -16,6 +18,9 @@ describe("STORY-QA04 editor visual layout", () => {
     expect(screen.getByLabelText("Left sidebar")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Properties/i }));
     expect(screen.getByLabelText("Properties panel")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Grid On" }));
+    expect(screen.getByText("Grid Off")).toBeInTheDocument();
+    expect(document.querySelector(".grid")).not.toBeInTheDocument();
 
     expect(screen.queryByRole("menuitem", { name: "Layout" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
