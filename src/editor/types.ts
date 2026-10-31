@@ -6,6 +6,7 @@ export type DiagramElement = {
   width: number;
   height: number;
   text?: string;
+  locked?: boolean;
   color?: string;
   strokeWidth?: number;
   points?: Point[];
@@ -45,7 +46,14 @@ export type DiagramProfile = {
   name: string;
   libraries: string[];
   actionPriority: Array<
-    "convert" | "style" | "duplicate" | "delete" | "group" | "ungroup"
+    | "convert"
+    | "style"
+    | "duplicate"
+    | "delete"
+    | "group"
+    | "ungroup"
+    | "lock"
+    | "unlock"
   >;
 };
 
