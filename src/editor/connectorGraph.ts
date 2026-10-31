@@ -26,6 +26,73 @@ function connectorEndpoints(element: DiagramElement): { start: Point; end: Point
   };
 }
 
+function resolveConnectorRouting(
+  element: DiagramElement,
+): "straight" | "orthogonal" | "curved" {
+  return element.connectorRouting ?? "straight";
+}
+
+function snapToGrid(value: number): number {
+  return Math.round(value / 16) * 16;
+}
+
+function normalizeRoutedPoints(points: Point[]): Point[] {
+  if (points.length < 2) {
+    return points;
+  }
+  const deduped = points.filter((point, index) => {
+    if (index === 0) {
+      return true;
+    }
+    const previous = points[index - 1];
+    return previous ? previous.x !== point.x || previous.y !== point.y : true;
+  });
+
+  return deduped.filter((point, index) => {
+    if (index === 0 || index === deduped.length - 1) {
+      return true;
+    }
+    const previous = deduped[index - 1];
+    const next = deduped[index + 1];
+    if (!previous || !next) {
+      return true;
+    }
+    const sameX = previous.x === point.x && point.x === next.x;
+    const sameY = previous.y === point.y && point.y === next.y;
+    return !(sameX || sameY);
+  });
+}
+
+function routeOrthogonalPoints(start: Point, end: Point): Point[] {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const clearance = 24;
+  const points: Point[] = [{ ...start }];
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const direction = dx >= 0 ? 1 : -1;
+    const leadX = snapToGrid(start.x + direction * clearance);
+    const tailX = snapToGrid(end.x - direction * clearance);
+    points.push(
+      { x: leadX, y: snapToGrid(start.y) },
+      { x: leadX, y: snapToGrid(end.y) },
+      { x: tailX, y: snapToGrid(end.y) },
+    );
+  } else {
+    const direction = dy >= 0 ? 1 : -1;
+    const leadY = snapToGrid(start.y + direction * clearance);
+    const tailY = snapToGrid(end.y - direction * clearance);
+    points.push(
+      { x: snapToGrid(start.x), y: leadY },
+      { x: snapToGrid(end.x), y: leadY },
+      { x: snapToGrid(end.x), y: tailY },
+    );
+  }
+
+  points.push({ ...end });
+  return normalizeRoutedPoints(points);
+}
+
 function elementCenter(element: DiagramElement): Point {
   return {
     x: element.x + element.width / 2,
@@ -129,6 +196,7 @@ export function enforceConnectorInvariants(
       return {
         ...element,
         connector: undefined,
+        points: undefined,
       };
     }
 
@@ -139,6 +207,7 @@ export function enforceConnectorInvariants(
       return {
         ...element,
         connector: undefined,
+        points: undefined,
       };
     }
 
@@ -150,25 +219,28 @@ export function enforceConnectorInvariants(
     const fromAnchorCenter = elementCenter(fromAnchor);
     const toAnchorCenter = elementCenter(toAnchor);
 
-    const fromPoint =
-      fromAnchorContainer != null
-        ? pointOnElementBorderToward(fromAnchor, toAnchorCenter)
-        : fromAnchorCenter;
-    const toPoint =
-      toAnchorContainer != null
-        ? pointOnElementBorderToward(toAnchor, fromAnchorCenter)
-        : toAnchorCenter;
+    const fromPoint = pointOnElementBorderToward(fromAnchor, toAnchorCenter);
+    const toPoint = pointOnElementBorderToward(toAnchor, fromAnchorCenter);
+    const connectorRouting = resolveConnectorRouting(element);
+    const routedPoints =
+      connectorRouting === "orthogonal"
+        ? routeOrthogonalPoints(fromPoint, toPoint)
+        : [fromPoint, toPoint];
 
-    const nextX = Math.min(fromPoint.x, toPoint.x);
-    const nextY = Math.min(fromPoint.y, toPoint.y);
-    const nextWidth = Math.max(12, Math.abs(toPoint.x - fromPoint.x));
-    const nextHeight = Math.max(12, Math.abs(toPoint.y - fromPoint.y));
+    const xs = routedPoints.map((point) => point.x);
+    const ys = routedPoints.map((point) => point.y);
+    const nextX = Math.min(...xs);
+    const nextY = Math.min(...ys);
+    const nextWidth = Math.max(12, Math.max(...xs) - nextX);
+    const nextHeight = Math.max(12, Math.max(...ys) - nextY);
+    const pointsChanged = JSON.stringify(element.points ?? []) !== JSON.stringify(routedPoints);
 
     if (
       element.x !== nextX ||
       element.y !== nextY ||
       element.width !== nextWidth ||
-      element.height !== nextHeight
+      element.height !== nextHeight ||
+      pointsChanged
     ) {
       changed = true;
       return {
@@ -177,6 +249,7 @@ export function enforceConnectorInvariants(
         y: nextY,
         width: nextWidth,
         height: nextHeight,
+        points: routedPoints,
       };
     }
 

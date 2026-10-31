@@ -25,6 +25,7 @@ export type DiagramElement = {
     fromId: string;
     toId: string;
   };
+  connectorRouting?: "straight" | "orthogonal" | "curved";
   portOffsets?: Array<{
     id: "top" | "right" | "bottom" | "left";
     x: number;
