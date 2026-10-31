@@ -71,6 +71,7 @@ import { exportPdf } from "../editor/export/pdf";
 import { exportDrawIo } from "../editor/export/drawio";
 import { importDrawIo } from "../editor/import/drawio";
 import { importMermaid } from "../editor/import/mermaid";
+import { assertNoCircularParentReferences } from "../editor/import/security";
 import {
   getCycledSelectionId,
   nudgeSelectedElements,
@@ -1806,6 +1807,7 @@ export function EditorSurface({
 
       if (lowerName.endsWith(".drawio") || lowerName.endsWith(".xml")) {
         const imported = importDrawIo(source);
+        assertNoCircularParentReferences(imported.document.elements);
         applyDocument(imported.document);
         setPersistenceError(null);
         setPersistenceMessage(
@@ -1818,6 +1820,7 @@ export function EditorSurface({
 
       if (lowerName.endsWith(".mmd") || lowerName.endsWith(".mermaid")) {
         const imported = importMermaid(source);
+        assertNoCircularParentReferences(imported.document.elements);
         applyDocument(imported.document);
         setPersistenceError(null);
         setPersistenceMessage("Imported Mermaid file.");
@@ -1825,6 +1828,7 @@ export function EditorSurface({
       }
 
       const imported = await importDocumentFromFile(file);
+      assertNoCircularParentReferences(imported.elements);
       applyDocument(imported);
       setPersistenceError(null);
       setPersistenceMessage("Imported YAML file.");

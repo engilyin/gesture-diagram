@@ -1,5 +1,10 @@
 import { inflateRaw } from "pako";
 import { createFidelityReport, type FidelityReport } from "./fidelity";
+import {
+  assertNoCircularParentReferences,
+  assertSafeXmlEntities,
+  maxCompressedImportBytes,
+} from "./security";
 import type { DiagramDocument, DiagramElement } from "../types";
 
 type DrawIoImportResult = {
@@ -16,6 +21,7 @@ function parseNumber(value: string | null, fallback: number): number {
 }
 
 function parseXmlDocument(source: string): XMLDocument {
+  assertSafeXmlEntities(source);
   const parser = new DOMParser();
   const xml = parser.parseFromString(source, "text/xml");
   const parseError = xml.querySelector("parsererror");
@@ -39,6 +45,9 @@ function decodeDiagramData(diagramData: string): string | null {
       return null;
     }
     const bytes = Uint8Array.from(atob(trimmed), (char) => char.charCodeAt(0));
+    if (bytes.byteLength > maxCompressedImportBytes) {
+      throw new Error("draw.io import failed: compressed payload exceeds 10 MB limit");
+    }
     const inflatedBytes = inflateRaw(bytes);
     const inflatedText = new TextDecoder().decode(inflatedBytes);
     const candidates = [inflatedText];
@@ -53,7 +62,13 @@ function decodeDiagramData(diagramData: string): string | null {
     if (decoded) {
       return decoded;
     }
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("compressed payload exceeds 10 MB limit")
+    ) {
+      throw error;
+    }
     return null;
   }
 
@@ -212,6 +227,7 @@ export function importDrawIo(source: string): DrawIoImportResult {
       message: `Ignored ${unsupportedStyles.length} unsupported draw.io style entries.`,
     });
   }
+  assertNoCircularParentReferences(groupedElements);
 
   return {
     document: {
