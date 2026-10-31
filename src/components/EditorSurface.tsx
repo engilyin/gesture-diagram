@@ -289,6 +289,7 @@ export function EditorSurface({
   );
   const [selection, setSelection] = useState(makeSelection());
   const [stroke, setStroke] = useState<Point[]>([]);
+  const [strokeGhost, setStrokeGhost] = useState<DiagramElement | null>(null);
   const [pendingDecision, setPendingDecision] =
     useState<AmbiguityDecision | null>(null);
   const [pendingStroke, setPendingStroke] = useState<Point[] | null>(null);
@@ -1247,6 +1248,41 @@ export function EditorSurface({
     }
   };
 
+  const buildStrokeGhost = useCallback((points: Point[]): DiagramElement | null => {
+    if (points.length < 2) {
+      return null;
+    }
+
+    const normalized = normalizeStroke(points);
+    if (normalized.length < 2) {
+      return null;
+    }
+
+    if (looksLikeTextGesture(normalized) || isHorizontalScribbleStroke(normalized)) {
+      const textGhost = createShapeFromStroke("text", normalized);
+      return {
+        ...textGhost,
+        x: snapToGrid(textGhost.x),
+        y: snapToGrid(textGhost.y),
+      };
+    }
+
+    const recognition = recognizeStroke(normalized);
+    const decision = evaluateAmbiguity(normalized);
+    const fallbackKind: ShapeChoice = decision.kind === "line" ? "line" : "rect";
+    const threshold = 0.4;
+    const baseGhost =
+      recognition.kind !== "ink" && recognition.element && recognition.confidence >= threshold
+        ? recognition.element
+        : createShapeFromStroke(fallbackKind, normalized);
+
+    return {
+      ...baseGhost,
+      x: snapToGrid(baseGhost.x),
+      y: snapToGrid(baseGhost.y),
+    };
+  }, []);
+
   const handlePortPointerDown = (
     port: { absoluteX: number; absoluteY: number },
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -1278,6 +1314,7 @@ export function EditorSurface({
     if (event.button === 1 || event.shiftKey) {
       setIsPanning(true);
       dragStartRef.current = local;
+      setStrokeGhost(null);
       return;
     }
 
@@ -1297,6 +1334,7 @@ export function EditorSurface({
           : [hitElement.id];
         setSelection(makeSelection(nextSelection));
         setStroke([]);
+        setStrokeGhost(null);
         setDragMode(null);
         setSnapGuide(null);
         return;
@@ -1309,6 +1347,7 @@ export function EditorSurface({
         setSelection(makeSelection(nextIds));
         setDragMode(null);
         setSnapGuide(null);
+        setStrokeGhost(null);
         return;
       }
 
@@ -1317,6 +1356,7 @@ export function EditorSurface({
         : [hitElement.id];
       setSelection(makeSelection(nextSelection));
       setStroke([]);
+      setStrokeGhost(null);
       setDragMode("move");
       lastPointerWorldRef.current = world;
       setSnapGuide(null);
@@ -1328,6 +1368,7 @@ export function EditorSurface({
     setMarqueeSelection(null);
     setSnapGuide(null);
     setStroke([world]);
+    setStrokeGhost(null);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1481,13 +1522,16 @@ export function EditorSurface({
       if (canUseMarquee && stroke.length <= 2 && width >= 24 && height >= 24) {
         setDragMode("marquee");
         setStroke([]);
+        setStrokeGhost(null);
         setMarqueeSelection({
           start,
           end: world,
         });
         return;
       }
-      setStroke((current) => [...current, world]);
+      const nextStroke = [...stroke, world];
+      setStroke(nextStroke);
+      setStrokeGhost(buildStrokeGhost(nextStroke));
     }
   };
 
@@ -1509,6 +1553,7 @@ export function EditorSurface({
     if (readOnly) {
       return;
     }
+    setStrokeGhost(null);
 
     if (connectionDrag) {
       const source = elements.find((element) => element.id === connectionDrag.fromId);
@@ -3002,6 +3047,83 @@ export function EditorSurface({
               height={selectedElement.height}
               onResizeStart={handleResizeStart}
             />
+          )}
+
+          {dragMode === "draw" && strokeGhost && (
+            <>
+              {strokeGhost.kind === "line" ? (
+                <div
+                  aria-label={`Ghost preview ${strokeGhost.kind}`}
+                  style={{
+                    position: "absolute",
+                    left: strokeGhost.x,
+                    top: strokeGhost.y,
+                    width: strokeGhost.width,
+                    height: strokeGhost.height,
+                    borderTop: `2px dashed ${strokeGhost.color ?? "var(--gd-stroke-preview, #2563eb)"}`,
+                    opacity: 0.55,
+                    pointerEvents: "none",
+                  }}
+                />
+              ) : strokeGhost.kind === "diamond" || strokeGhost.kind === "triangle" ? (
+                <div
+                  aria-label={`Ghost preview ${strokeGhost.kind}`}
+                  style={{
+                    position: "absolute",
+                    left: strokeGhost.x,
+                    top: strokeGhost.y,
+                    width: strokeGhost.width,
+                    height: strokeGhost.height,
+                    opacity: 0.45,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <svg
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      overflow: "visible",
+                    }}
+                  >
+                    {strokeGhost.kind === "diamond" ? (
+                      <polygon
+                        points={`${strokeGhost.width / 2},0 ${strokeGhost.width},${strokeGhost.height / 2} ${strokeGhost.width / 2},${strokeGhost.height} 0,${strokeGhost.height / 2}`}
+                        fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                        stroke={strokeGhost.color ?? "var(--gd-stroke-preview, #2563eb)"}
+                        strokeWidth={2}
+                        strokeDasharray="8 5"
+                      />
+                    ) : (
+                      <polygon
+                        points={`${strokeGhost.width / 2},0 ${strokeGhost.width},${strokeGhost.height} 0,${strokeGhost.height}`}
+                        fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                        stroke={strokeGhost.color ?? "var(--gd-stroke-preview, #2563eb)"}
+                        strokeWidth={2}
+                        strokeDasharray="8 5"
+                      />
+                    )}
+                  </svg>
+                </div>
+              ) : (
+                <div
+                  aria-label={`Ghost preview ${strokeGhost.kind}`}
+                  style={{
+                    position: "absolute",
+                    left: strokeGhost.x,
+                    top: strokeGhost.y,
+                    width: strokeGhost.width,
+                    height: strokeGhost.height,
+                    border: `2px dashed ${strokeGhost.color ?? "var(--gd-stroke-preview, #2563eb)"}`,
+                    borderRadius: strokeGhost.kind === "ellipse" ? "50%" : 8,
+                    background: "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))",
+                    opacity: 0.45,
+                    pointerEvents: "none",
+                  }}
+                />
+              )}
+            </>
           )}
 
           {stroke.length > 0 && (
