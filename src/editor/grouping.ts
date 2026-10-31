@@ -95,8 +95,10 @@ export function autoSizeContainers(
   elements: DiagramElement[],
   padding = CONTAINER_PADDING,
 ): DiagramElement[] {
+  const arranged = elements.map((element) => ({ ...element }));
+  const byId = new Map(arranged.map((element) => [element.id, element]));
   const childrenByParent = new Map<string, DiagramElement[]>();
-  elements.forEach((element) => {
+  arranged.forEach((element) => {
     if (!element.parentId) {
       return;
     }
@@ -105,14 +107,90 @@ export function autoSizeContainers(
     childrenByParent.set(element.parentId, children);
   });
 
-  return elements.map((element) => {
+  arranged.forEach((element) => {
     if (!isContainerElement(element)) {
-      return element;
+      return;
     }
 
     const children = childrenByParent.get(element.id);
     if (!children || children.length === 0) {
-      return element;
+      return;
+    }
+
+    const layoutMode = element.containerLayoutMode ?? "free";
+    if (layoutMode !== "free") {
+      const sortedChildren = [...children].sort((left, right) =>
+        left.y === right.y ? left.x - right.x : left.y - right.y,
+      );
+      const gap = 16;
+
+      if (layoutMode === "row") {
+        let cursorX = element.x + padding;
+        const cursorY = element.y + padding;
+        let maxHeight = 0;
+        sortedChildren.forEach((child) => {
+          const target = byId.get(child.id);
+          if (!target) {
+            return;
+          }
+          target.x = cursorX;
+          target.y = cursorY;
+          cursorX += target.width + gap;
+          maxHeight = Math.max(maxHeight, target.height);
+        });
+        const rowWidth =
+          sortedChildren.reduce((total, child) => total + child.width, 0) +
+          Math.max(0, sortedChildren.length - 1) * gap;
+        element.width = Math.max(rowWidth + padding * 2, MIN_CONTAINER_WIDTH);
+        element.height = Math.max(maxHeight + padding * 2, MIN_CONTAINER_HEIGHT);
+        return;
+      }
+
+      if (layoutMode === "column") {
+        const cursorX = element.x + padding;
+        let cursorY = element.y + padding;
+        let maxWidth = 0;
+        sortedChildren.forEach((child) => {
+          const target = byId.get(child.id);
+          if (!target) {
+            return;
+          }
+          target.x = cursorX;
+          target.y = cursorY;
+          cursorY += target.height + gap;
+          maxWidth = Math.max(maxWidth, target.width);
+        });
+        const columnHeight =
+          sortedChildren.reduce((total, child) => total + child.height, 0) +
+          Math.max(0, sortedChildren.length - 1) * gap;
+        element.width = Math.max(maxWidth + padding * 2, MIN_CONTAINER_WIDTH);
+        element.height = Math.max(columnHeight + padding * 2, MIN_CONTAINER_HEIGHT);
+        return;
+      }
+
+      const columns = Math.max(1, Math.ceil(Math.sqrt(sortedChildren.length)));
+      const cellWidth = Math.max(...sortedChildren.map((child) => child.width));
+      const cellHeight = Math.max(...sortedChildren.map((child) => child.height));
+      sortedChildren.forEach((child, index) => {
+        const target = byId.get(child.id);
+        if (!target) {
+          return;
+        }
+        const row = Math.floor(index / columns);
+        const column = index % columns;
+        target.x = element.x + padding + column * (cellWidth + gap);
+        target.y = element.y + padding + row * (cellHeight + gap);
+      });
+      const rows = Math.ceil(sortedChildren.length / columns);
+      element.width = Math.max(
+        columns * cellWidth + Math.max(0, columns - 1) * gap + padding * 2,
+        MIN_CONTAINER_WIDTH,
+      );
+      element.height = Math.max(
+        rows * cellHeight + Math.max(0, rows - 1) * gap + padding * 2,
+        MIN_CONTAINER_HEIGHT,
+      );
+      return;
     }
 
     const minX = Math.min(...children.map((child) => child.x));
@@ -122,14 +200,13 @@ export function autoSizeContainers(
 
     const width = Math.max(maxX - minX + padding * 2, MIN_CONTAINER_WIDTH);
     const height = Math.max(maxY - minY + padding * 2, MIN_CONTAINER_HEIGHT);
-    return {
-      ...element,
-      x: minX - padding,
-      y: minY - padding,
-      width,
-      height,
-    };
+    element.x = minX - padding;
+    element.y = minY - padding;
+    element.width = width;
+    element.height = height;
   });
+
+  return arranged;
 }
 
 export function inheritLayerFromParents(

@@ -15,6 +15,7 @@ export type DiagramElement = {
   layer?: number;
   groupId?: string;
   parentId?: string;
+  containerLayoutMode?: "free" | "row" | "column" | "grid";
   connector?: {
     fromId: string;
     toId: string;
