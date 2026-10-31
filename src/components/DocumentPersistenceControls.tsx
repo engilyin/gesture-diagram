@@ -6,6 +6,7 @@ interface DocumentPersistenceControlsProps {
   onExportYaml: () => void;
   onExportSvg: () => void;
   onExportPng: () => void;
+  onExportPdf: () => void;
   onImport: (file: File) => Promise<void>;
 }
 
@@ -15,6 +16,7 @@ export function DocumentPersistenceControls({
   onExportYaml,
   onExportSvg,
   onExportPng,
+  onExportPdf,
   onImport,
 }: DocumentPersistenceControlsProps) {
   const fileInputId = useId();
@@ -49,6 +51,9 @@ export function DocumentPersistenceControls({
       </button>
       <button type="button" onClick={onExportPng}>
         Export PNG
+      </button>
+      <button type="button" onClick={onExportPdf}>
+        Export PDF
       </button>
       <label htmlFor={fileInputId}>
         Import File

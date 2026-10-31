@@ -77,6 +77,7 @@ export {
 } from "./export/fidelity";
 export { exportSvg } from "./export/svg";
 export { exportPng } from "./export/png";
+export { exportPdf, resolvePdfExportDimensions } from "./export/pdf";
 export {
   exportPngHeadless,
   exportSvgHeadless,
