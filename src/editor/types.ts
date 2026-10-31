@@ -24,6 +24,14 @@ export type DiagramElement = {
   }>;
 };
 
+export type DiagramLayer = {
+  id: string;
+  name: string;
+  color: string;
+  visible: boolean;
+  locked: boolean;
+};
+
 export type DiagramDocument = {
   version: string;
   elements: DiagramElement[];
@@ -34,6 +42,7 @@ export type DiagramDocument = {
       width?: number;
       height?: number;
     };
+    layers?: DiagramLayer[];
   };
   metadata?: {
     schemaVersion: string;

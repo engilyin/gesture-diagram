@@ -87,6 +87,7 @@ const minimapHeight = 125;
 const fitPadding = 48;
 const defaultDocumentTitle = "Untitled diagram";
 const defaultCanvasBackground = "#ffffff";
+const defaultLayerColor = "#4f46e5";
 
 type DragMode = "draw" | "move" | "resize" | "marquee" | null;
 type HistorySnapshot = DiagramElement[];
@@ -101,6 +102,14 @@ type ShapeChoice =
   | "text"
   | "container"
   | "line";
+
+type EditorLayer = {
+  id: string;
+  name: string;
+  color: string;
+  visible: boolean;
+  locked: boolean;
+};
 
 function getStrokeBounds(points: Point[]): Bounds {
   const xs = points.map((point) => point.x);
@@ -188,6 +197,16 @@ function isElementLocked(element: DiagramElement): boolean {
   return Boolean(element.locked);
 }
 
+function createDefaultLayer(): EditorLayer {
+  return {
+    id: crypto.randomUUID(),
+    name: "Layer 1",
+    color: defaultLayerColor,
+    visible: true,
+    locked: false,
+  };
+}
+
 type EditorSurfaceProps = {
   document?: DiagramDocument;
   readOnly?: boolean;
@@ -209,8 +228,18 @@ export function EditorSurface({
         width: document?.settings?.canvas?.width,
         height: document?.settings?.canvas?.height,
       },
+      layers:
+        document?.settings?.layers && document.settings.layers.length > 0
+          ? document.settings.layers.map((layer) => ({ ...layer }))
+          : [createDefaultLayer()],
     }),
-    [document?.settings?.background, document?.settings?.canvas?.height, document?.settings?.canvas?.width, document?.settings?.title],
+    [
+      document?.settings?.background,
+      document?.settings?.canvas?.height,
+      document?.settings?.canvas?.width,
+      document?.settings?.layers,
+      document?.settings?.title,
+    ],
   );
   const [view, setView] = useState<ViewState>(createViewState());
   const [elements, setElements] = useState<DiagramElement[]>(
@@ -227,6 +256,9 @@ export function EditorSurface({
   );
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [documentSettings, setDocumentSettings] = useState(initialSettings);
+  const [activeLayerId, setActiveLayerId] = useState(
+    initialSettings.layers[0]?.id ?? "",
+  );
   const [surfaceSize, setSurfaceSize] = useState({ width: 1024, height: 768 });
   const [isPanning, setIsPanning] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -249,6 +281,7 @@ export function EditorSurface({
   const applyingHistoryRef = useRef(false);
   const clipboardRef = useRef<DiagramElement[] | null>(null);
   const pasteSequenceRef = useRef(0);
+  const draggedLayerIdRef = useRef<string | null>(null);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -311,9 +344,61 @@ export function EditorSurface({
     [portSourceElement],
   );
 
+  const layers = useMemo(() => {
+    if (documentSettings.layers && documentSettings.layers.length > 0) {
+      return documentSettings.layers;
+    }
+    return [createDefaultLayer()];
+  }, [documentSettings.layers]);
+
+  const layerIndexById = useMemo(
+    () => new Map(layers.map((layer, index) => [layer.id, index])),
+    [layers],
+  );
+
+  const layerByIndex = useMemo(
+    () => new Map(layers.map((layer, index) => [index, layer])),
+    [layers],
+  );
+
+  const activeLayerIndex = useMemo(() => {
+    const mapped = layerIndexById.get(activeLayerId);
+    if (mapped !== undefined) {
+      return mapped;
+    }
+    return 0;
+  }, [activeLayerId, layerIndexById]);
+
+  const assignLayerToElement = useCallback(
+    (element: DiagramElement): DiagramElement => ({
+      ...element,
+      layer: activeLayerIndex,
+    }),
+    [activeLayerIndex],
+  );
+
+  const isElementInteractionLocked = useCallback(
+    (element: DiagramElement): boolean => {
+      if (isElementLocked(element)) {
+        return true;
+      }
+      const layerIndex = element.layer ?? 0;
+      return Boolean(layerByIndex.get(layerIndex)?.locked);
+    },
+    [layerByIndex],
+  );
+
   const visibleElements = useMemo(
-    () => getVisibleElements(elements, view, surfaceSize),
-    [elements, surfaceSize, view],
+    () =>
+      getVisibleElements(
+        elements.filter((element) => {
+          const layerIndex = element.layer ?? 0;
+          return layerByIndex.get(layerIndex)?.visible ?? true;
+        }),
+        view,
+        surfaceSize,
+      ),
+    [elements, layerByIndex, surfaceSize, view],
   );
 
   const contentBounds = useMemo<Bounds | null>(() => {
@@ -381,10 +466,10 @@ export function EditorSurface({
       selection.ids.includes(element.id),
     );
     const hasLockedSelection = selectedElements.some((element) =>
-      isElementLocked(element),
+      isElementInteractionLocked(element),
     );
     const hasUnlockedSelection = selectedElements.some(
-      (element) => !isElementLocked(element),
+      (element) => !isElementInteractionLocked(element),
     );
     const canGroup = selection.ids.length > 1;
     const canUngroup = selectedElements.some((element) =>
@@ -418,7 +503,7 @@ export function EditorSurface({
     ];
 
     setSelectedActions(nextActions);
-  }, [elements, selection]);
+  }, [elements, isElementInteractionLocked, selection]);
 
   const applyElementsWithInvariants = useCallback(
     (updater: (current: DiagramElement[]) => DiagramElement[]) => {
@@ -765,7 +850,7 @@ export function EditorSurface({
       applyElementsWithInvariants((current) =>
         current.filter(
           (element) =>
-            !idsWithDescendants.has(element.id) || isElementLocked(element),
+            !idsWithDescendants.has(element.id) || isElementInteractionLocked(element),
         ),
       );
       setSelection(makeSelection());
@@ -796,12 +881,11 @@ export function EditorSurface({
     if (!document) {
       return;
     }
-    const incoming = JSON.stringify(document.elements);
-    const current = JSON.stringify(elements);
-    if (incoming === current) {
-      return;
-    }
 
+    const incomingLayers =
+      document.settings?.layers && document.settings.layers.length > 0
+        ? document.settings.layers.map((layer) => ({ ...layer }))
+        : [createDefaultLayer()];
     setElements([...document.elements]);
     setDocumentSettings({
       title: document.settings?.title ?? defaultDocumentTitle,
@@ -810,10 +894,12 @@ export function EditorSurface({
         width: document.settings?.canvas?.width,
         height: document.settings?.canvas?.height,
       },
+      layers: incomingLayers,
     });
+    setActiveLayerId(incomingLayers[0]?.id ?? "");
     setSelection(makeSelection());
     resetHistory(document.elements);
-  }, [document, elements, resetHistory]);
+  }, [document, resetHistory]);
 
   useEffect(() => {
     onDocumentChange?.(buildDocument());
@@ -830,6 +916,10 @@ export function EditorSurface({
   const applyDocument = (documentPayload: ReturnType<typeof loadDocument>) => {
     const loaded = loadDocument(documentPayload);
     const repaired = enforceConnectorInvariants(getDocumentElements(loaded));
+    const loadedLayers =
+      loaded.settings?.layers && loaded.settings.layers.length > 0
+        ? loaded.settings.layers.map((layer) => ({ ...layer }))
+        : [createDefaultLayer()];
     setElements(repaired.repairedElements);
     setDocumentSettings({
       title: loaded.settings?.title ?? defaultDocumentTitle,
@@ -838,7 +928,9 @@ export function EditorSurface({
         width: loaded.settings?.canvas?.width,
         height: loaded.settings?.canvas?.height,
       },
+      layers: loadedLayers,
     });
+    setActiveLayerId(loadedLayers[0]?.id ?? "");
     setSelection(makeSelection());
     resetHistory(repaired.repairedElements);
   };
@@ -1043,7 +1135,7 @@ export function EditorSurface({
     const hitElement = hitTestElement(world);
 
     if (hitElement) {
-      if (isElementLocked(hitElement)) {
+      if (isElementInteractionLocked(hitElement)) {
         const nextSelection = hitElement.groupId
           ? getGroupedSelectionIds(elements, [hitElement.id])
           : [hitElement.id];
@@ -1114,7 +1206,7 @@ export function EditorSurface({
         if (!target) {
           return false;
         }
-        return !isElementLocked(target);
+        return !isElementInteractionLocked(target);
       });
       if (movableIds.length === 0) {
         setDragMode(null);
@@ -1129,7 +1221,11 @@ export function EditorSurface({
 
       if (!snapDisabled && selection.ids.length === 1) {
         const primary = elements.find((element) => element.id === selectedId);
-        if (primary && primary.kind !== "line" && !isElementLocked(primary)) {
+        if (
+          primary &&
+          primary.kind !== "line" &&
+          !isElementInteractionLocked(primary)
+        ) {
           const preview = { ...primary, x: primary.x + dx, y: primary.y + dy };
           const others = elements.filter((element) => element.id !== selectedId);
           const shapeSnap = findSnapGuide(preview, others);
@@ -1172,7 +1268,7 @@ export function EditorSurface({
       lastPointerWorldRef.current
     ) {
       const selected = elements.find((element) => element.id === selectedId);
-      if (!selected || isElementLocked(selected)) {
+      if (!selected || isElementInteractionLocked(selected)) {
         setDragMode(null);
         setResizeHandle(null);
         return;
@@ -1285,7 +1381,9 @@ export function EditorSurface({
     if (stroke.length === 1 && dragMode === "draw") {
       const tapPoint = stroke[0];
       if (tapPoint) {
-        const textElement = createText(tapPoint.x, tapPoint.y, 160, 56);
+        const textElement = assignLayerToElement(
+          createText(tapPoint.x, tapPoint.y, 160, 56),
+        );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
         setEditingTextElementId(textElement.id);
@@ -1294,7 +1392,9 @@ export function EditorSurface({
       setStroke([]);
     } else if (stroke.length > 0 && dragMode === "draw") {
       if (looksLikeTextGesture(stroke)) {
-        const textElement = createShapeFromStroke("text", stroke);
+        const textElement = assignLayerToElement(
+          createShapeFromStroke("text", stroke),
+        );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
         setEditingTextElementId(textElement.id);
@@ -1310,7 +1410,9 @@ export function EditorSurface({
       }
       const normalized = normalizeStroke(stroke);
       if (looksLikeTextGesture(normalized)) {
-        const textElement = createShapeFromStroke("text", normalized);
+        const textElement = assignLayerToElement(
+          createShapeFromStroke("text", normalized),
+        );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
         setEditingTextElementId(textElement.id);
@@ -1325,7 +1427,9 @@ export function EditorSurface({
         return;
       }
       if (isHorizontalScribbleStroke(normalized)) {
-        const textElement = createShapeFromStroke("text", normalized);
+        const textElement = assignLayerToElement(
+          createShapeFromStroke("text", normalized),
+        );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
         setEditingTextElementId(textElement.id);
@@ -1365,7 +1469,7 @@ export function EditorSurface({
       const recognizedElement = result.element;
       if (recognizedElement) {
         const snappedElement = {
-          ...recognizedElement,
+          ...assignLayerToElement(recognizedElement),
           x: snapToGrid(recognizedElement.x),
           y: snapToGrid(recognizedElement.y),
         };
@@ -1401,7 +1505,7 @@ export function EditorSurface({
     }
 
     if (pendingStroke && pendingStroke.length > 1) {
-      const inkElement = createInk(pendingStroke);
+      const inkElement = assignLayerToElement(createInk(pendingStroke));
       applyElementsWithInvariants((current) => [...current, inkElement]);
       setSelection(makeSelection([inkElement.id]));
     }
@@ -1422,7 +1526,7 @@ export function EditorSurface({
 
     const chosen = createShapeFromStroke(kind, pendingStroke);
     const snappedElement = {
-      ...chosen,
+      ...assignLayerToElement(chosen),
       x: snapToGrid(chosen.x),
       y: snapToGrid(chosen.y),
     };
@@ -1466,7 +1570,7 @@ export function EditorSurface({
     if (readOnly) {
       return;
     }
-    if (!selectedElement || isElementLocked(selectedElement)) {
+    if (!selectedElement || isElementInteractionLocked(selectedElement)) {
       return;
     }
 
@@ -1594,7 +1698,7 @@ export function EditorSurface({
         if (!element) {
           return false;
         }
-        return !isElementLocked(element);
+        return !isElementInteractionLocked(element);
       });
       if (unlockedSelectionIds.length === 0) {
         return;
@@ -1604,7 +1708,7 @@ export function EditorSurface({
         nudgeSelectedElements(current, unlockedSelectionIds, dx, dy),
       );
     },
-    [applyElementsWithInvariants, elements, selection.ids],
+    [applyElementsWithInvariants, elements, isElementInteractionLocked, selection.ids],
   );
 
   useEffect(() => {
@@ -1732,6 +1836,146 @@ export function EditorSurface({
     }));
   };
 
+  const updateLayers = (updater: (current: EditorLayer[]) => EditorLayer[]) => {
+    setDocumentSettings((current) => {
+      const currentLayers =
+        current.layers && current.layers.length > 0
+          ? current.layers
+          : [createDefaultLayer()];
+      const nextLayers = updater(currentLayers);
+      return {
+        ...current,
+        layers: nextLayers.length > 0 ? nextLayers : [createDefaultLayer()],
+      };
+    });
+  };
+
+  const handleCreateLayer = () => {
+    const nextLayer: EditorLayer = {
+      id: crypto.randomUUID(),
+      name: `Layer ${layers.length + 1}`,
+      color: defaultLayerColor,
+      visible: true,
+      locked: false,
+    };
+    updateLayers((current) => [...current, nextLayer]);
+    setActiveLayerId(nextLayer.id);
+  };
+
+  const handleRenameLayer = (layerId: string, name: string) => {
+    updateLayers((current) =>
+      current.map((layer) =>
+        layer.id === layerId
+          ? { ...layer, name: name.trim().length > 0 ? name : layer.name }
+          : layer,
+      ),
+    );
+  };
+
+  const handleToggleLayerVisibility = (layerId: string) => {
+    updateLayers((current) =>
+      current.map((layer) =>
+        layer.id === layerId ? { ...layer, visible: !layer.visible } : layer,
+      ),
+    );
+  };
+
+  const handleToggleLayerLock = (layerId: string) => {
+    updateLayers((current) =>
+      current.map((layer) =>
+        layer.id === layerId ? { ...layer, locked: !layer.locked } : layer,
+      ),
+    );
+  };
+
+  const handleLayerColorChange = (layerId: string, color: string) => {
+    updateLayers((current) =>
+      current.map((layer) => (layer.id === layerId ? { ...layer, color } : layer)),
+    );
+  };
+
+  const reorderLayers = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
+      return;
+    }
+    const maxIndex = layers.length - 1;
+    if (fromIndex > maxIndex || toIndex > maxIndex) {
+      return;
+    }
+
+    const reordered = [...layers];
+    const [movedLayer] = reordered.splice(fromIndex, 1);
+    if (!movedLayer) {
+      return;
+    }
+    reordered.splice(toIndex, 0, movedLayer);
+    updateLayers(() => reordered);
+
+    const nextIndexById = new Map(reordered.map((layer, index) => [layer.id, index]));
+    applyElementsWithInvariants((current) =>
+      current.map((element) => {
+        const currentLayer = element.layer ?? 0;
+        const currentLayerId = layers[currentLayer]?.id;
+        if (!currentLayerId) {
+          return element;
+        }
+        const nextLayerIndex = nextIndexById.get(currentLayerId);
+        if (nextLayerIndex === undefined) {
+          return element;
+        }
+        return {
+          ...element,
+          layer: nextLayerIndex,
+        };
+      }),
+    );
+  };
+
+  const handleDeleteLayer = (layerId: string) => {
+    const layerIndex = layerIndexById.get(layerId);
+    if (layerIndex === undefined || layers.length <= 1) {
+      return;
+    }
+    const hasLayerElements = elements.some((element) => (element.layer ?? 0) === layerIndex);
+    if (
+      hasLayerElements &&
+      !window.confirm("Delete this layer and move its elements to Layer 1?")
+    ) {
+      return;
+    }
+
+    const nextLayers = layers.filter((layer) => layer.id !== layerId);
+    const nextIndexById = new Map(nextLayers.map((layer, index) => [layer.id, index]));
+    updateLayers(() => nextLayers);
+    setActiveLayerId((current) =>
+      current === layerId ? (nextLayers[0]?.id ?? "") : current,
+    );
+
+    applyElementsWithInvariants((current) =>
+      current.map((element) => {
+        const currentLayer = element.layer ?? 0;
+        const currentLayerId = layers[currentLayer]?.id;
+        if (!currentLayerId || currentLayerId === layerId) {
+          return {
+            ...element,
+            layer: 0,
+          };
+        }
+        const nextLayer = nextIndexById.get(currentLayerId);
+        if (nextLayer === undefined) {
+          return {
+            ...element,
+            layer: 0,
+          };
+        }
+        return {
+          ...element,
+          layer: nextLayer,
+        };
+      }),
+    );
+  };
+
   return (
     <div className="editor-shell">
       <div className="toolbar" aria-label="Editor controls">
@@ -1794,6 +2038,88 @@ export function EditorSurface({
               onChange={(event) => handleCanvasHintChange("height", event.target.value)}
             />
           </label>
+        </fieldset>
+      )}
+
+      {!readOnly && (
+        <fieldset className="layer-panel" aria-label="Layer panel">
+          <legend>Layers</legend>
+          <div className="layer-panel-actions">
+            <button type="button" onClick={handleCreateLayer}>
+              Add Layer
+            </button>
+          </div>
+          <ul className="layer-list">
+            {layers.map((layer, index) => {
+              const hasContent = elements.some((element) => (element.layer ?? 0) === index);
+              return (
+                <li
+                  key={layer.id}
+                  className="layer-row"
+                  draggable
+                  onDragStart={() => {
+                    draggedLayerIdRef.current = layer.id;
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => {
+                    const fromId = draggedLayerIdRef.current;
+                    if (!fromId) {
+                      return;
+                    }
+                    const fromIndex = layerIndexById.get(fromId);
+                    if (fromIndex === undefined) {
+                      return;
+                    }
+                    reorderLayers(fromIndex, index);
+                    draggedLayerIdRef.current = null;
+                  }}
+                >
+                  <button
+                    type="button"
+                    aria-label={`Select ${layer.name}`}
+                    className={activeLayerId === layer.id ? "layer-select active" : "layer-select"}
+                    onClick={() => setActiveLayerId(layer.id)}
+                  >
+                    ●
+                  </button>
+                  <input
+                    aria-label={`Layer name ${index + 1}`}
+                    value={layer.name}
+                    onChange={(event) => handleRenameLayer(layer.id, event.target.value)}
+                  />
+                  <input
+                    aria-label={`Layer color ${index + 1}`}
+                    type="color"
+                    value={layer.color}
+                    onChange={(event) => handleLayerColorChange(layer.id, event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Toggle visibility ${layer.name}`}
+                    onClick={() => handleToggleLayerVisibility(layer.id)}
+                  >
+                    {layer.visible ? "Hide" : "Show"}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Toggle lock ${layer.name}`}
+                    onClick={() => handleToggleLayerLock(layer.id)}
+                  >
+                    {layer.locked ? "Unlock" : "Lock"}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${layer.name}`}
+                    disabled={layers.length <= 1}
+                    onClick={() => handleDeleteLayer(layer.id)}
+                  >
+                    Delete
+                  </button>
+                  {hasContent ? <span className="layer-count">●</span> : null}
+                </li>
+              );
+            })}
+          </ul>
         </fieldset>
       )}
 
@@ -2154,7 +2480,7 @@ export function EditorSurface({
           })}
 
           {visibleElements
-            .filter((element) => isElementLocked(element))
+            .filter((element) => isElementInteractionLocked(element))
             .map((element) => (
               <div
                 key={`lock-${element.id}`}
@@ -2185,7 +2511,7 @@ export function EditorSurface({
 
           {selectedElement &&
             selectedElement.kind !== "ink" &&
-            !isElementLocked(selectedElement) && (
+            !isElementInteractionLocked(selectedElement) && (
             <SelectionHandles
               x={selectedElement.x}
               y={selectedElement.y}

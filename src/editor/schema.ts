@@ -57,11 +57,26 @@ function isValidDocumentSettings(
     (typeof canvas === "object" &&
       (canvas.width == null || typeof canvas.width === "number") &&
       (canvas.height == null || typeof canvas.height === "number"));
+  const layers = candidate.layers;
+  const validLayers =
+    layers == null ||
+    (Array.isArray(layers) &&
+      layers.every(
+        (layer) =>
+          layer &&
+          typeof layer === "object" &&
+          typeof layer.id === "string" &&
+          typeof layer.name === "string" &&
+          typeof layer.color === "string" &&
+          typeof layer.visible === "boolean" &&
+          typeof layer.locked === "boolean",
+      ));
 
   return (
     (candidate.title == null || typeof candidate.title === "string") &&
     (candidate.background == null || typeof candidate.background === "string") &&
-    validCanvas
+    validCanvas &&
+    validLayers
   );
 }
 

@@ -1,6 +1,7 @@
 export type {
   DiagramDocument,
   DiagramElement,
+  DiagramLayer,
   DiagramProfile,
   GestureStroke,
   Point,
