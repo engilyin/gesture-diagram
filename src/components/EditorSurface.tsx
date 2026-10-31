@@ -673,6 +673,7 @@ export function EditorSurface({
       selectedElements.length === 1 &&
       selectedElements[0]?.kind !== "ink" &&
       !isElementInteractionLocked(selectedElements[0]);
+    const primaryLayerIndex = selectedElements[0]?.layer ?? 0;
     const selectedContainer =
       selectedElements.length === 1 && selectedElements[0]?.kind === "container"
         ? selectedElements[0]
@@ -780,8 +781,23 @@ export function EditorSurface({
               },
             ]
         : []),
+      ...layers
+        .map((layer, index) => ({ layer, index }))
+        .filter(
+          ({ index }) =>
+            selectedElements.length > 0 &&
+            index !== primaryLayerIndex &&
+            selectedElements.every((element) => !isElementInteractionLocked(element)),
+        )
+        .map(({ layer, index }) => ({
+          id: `send-to-layer-${layer.id}`,
+          label: `Send to Layer: ${layer.name}`,
+          kind: "send-to-layer" as const,
+          layerId: layer.id,
+          rank: 17 + index,
+        })),
       ...(canGroup
-        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 18 }]
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 40 }]
         : []),
       ...(canUngroup
         ? [
@@ -789,21 +805,21 @@ export function EditorSurface({
                 id: "ungroup",
                 label: "Ungroup",
                 kind: "ungroup" as const,
-                rank: 19,
+                rank: 41,
               },
             ]
         : []),
       ...(hasUnlockedSelection
-        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 20 }]
+        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 42 }]
         : []),
       ...(hasLockedSelection
-        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 21 }]
+        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 43 }]
         : []),
-      { id: "delete", label: "Delete", kind: "delete", rank: 22 },
+      { id: "delete", label: "Delete", kind: "delete", rank: 44 },
     ];
 
     setSelectedActions(nextActions);
-  }, [elements, isElementInteractionLocked, isFormatPainterActive, selection]);
+  }, [elements, isElementInteractionLocked, isFormatPainterActive, layers, selection]);
 
   const applyElementsWithInvariants = useCallback(
     (updater: (current: DiagramElement[]) => DiagramElement[]) => {
@@ -1352,6 +1368,25 @@ export function EditorSurface({
         ),
       );
       setSelection(makeSelection([target.id]));
+      return;
+    }
+
+    if (action.kind === "send-to-layer" && action.layerId) {
+      const layerIndex = layerIndexById.get(action.layerId);
+      if (layerIndex === undefined) {
+        return;
+      }
+      const targetIds = new Set(getGroupedSelectionIds(elements, selection.ids));
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          targetIds.has(element.id)
+            ? {
+                ...element,
+                layer: layerIndex,
+              }
+            : element,
+        ),
+      );
       return;
     }
 

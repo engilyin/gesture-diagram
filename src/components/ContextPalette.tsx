@@ -26,12 +26,14 @@ export type PaletteAction = {
     | "layout-grid"
     | "collapse-container"
     | "expand-container"
+    | "send-to-layer"
     | "duplicate"
     | "delete"
     | "group"
     | "ungroup"
     | "lock"
     | "unlock";
+  layerId?: string;
   rank: number;
 };
 
