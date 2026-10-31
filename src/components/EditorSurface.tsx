@@ -40,6 +40,7 @@ import {
   collectOwnedDescendantIds,
   getGroupedSelectionIds,
   groupElements,
+  inheritLayerFromParents,
   moveGroupedElements,
   releaseChildrenFromParents,
   reconcileContainerOwnership,
@@ -321,6 +322,9 @@ export function EditorSurface({
     useState<MarqueeSelection | null>(null);
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   const [snapGuide, setSnapGuide] = useState<SnapGuide | null>(null);
+  const [containerDropTargetId, setContainerDropTargetId] = useState<string | null>(
+    null,
+  );
   const [connectionDrag, setConnectionDrag] = useState<ConnectionDragState | null>(
     null,
   );
@@ -669,7 +673,8 @@ export function EditorSurface({
       const ops = createOpsFromElementDiff(current, updated);
       const opApplied = applyOps(current, ops);
       const reconciled = reconcileContainerOwnership(opApplied);
-      const resized = autoSizeContainers(reconciled);
+      const layered = inheritLayerFromParents(reconciled);
+      const resized = autoSizeContainers(layered);
       const repaired = enforceConnectorInvariants(resized);
       const nextElements = repaired.repairedElements;
 
@@ -756,6 +761,35 @@ export function EditorSurface({
     x: element.x + element.width / 2,
     y: element.y + element.height / 2,
   });
+
+  const findContainerDropTarget = useCallback(
+    (movingElement: DiagramElement, current: DiagramElement[]): string | null => {
+      if (
+        movingElement.kind === "container" ||
+        movingElement.kind === "line" ||
+        movingElement.kind === "ink"
+      ) {
+        return null;
+      }
+      const sortedContainers = current
+        .filter(
+          (element) =>
+            element.kind === "container" &&
+            element.id !== movingElement.id &&
+            !isElementInteractionLocked(element),
+        )
+        .sort((a, b) => a.width * a.height - b.width * b.height);
+      const target = sortedContainers.find(
+        (container) =>
+          movingElement.x >= container.x &&
+          movingElement.y >= container.y &&
+          movingElement.x + movingElement.width <= container.x + container.width &&
+          movingElement.y + movingElement.height <= container.y + container.height,
+      );
+      return target?.id ?? null;
+    },
+    [isElementInteractionLocked],
+  );
 
   const alignSelection = useCallback(
     (targets: DiagramElement[], mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => {
@@ -1009,7 +1043,8 @@ export function EditorSurface({
     setElements((current) => {
       const updated = applyOps(current, entry.undo);
       const reconciled = reconcileContainerOwnership(updated);
-      const resized = autoSizeContainers(reconciled);
+      const layered = inheritLayerFromParents(reconciled);
+      const resized = autoSizeContainers(layered);
       const repaired = enforceConnectorInvariants(resized);
       return repaired.repairedElements;
     });
@@ -1033,7 +1068,8 @@ export function EditorSurface({
     setElements((current) => {
       const updated = applyOps(current, entry.redo);
       const reconciled = reconcileContainerOwnership(updated);
-      const resized = autoSizeContainers(reconciled);
+      const layered = inheritLayerFromParents(reconciled);
+      const resized = autoSizeContainers(layered);
       const repaired = enforceConnectorInvariants(resized);
       return repaired.repairedElements;
     });
@@ -1612,6 +1648,7 @@ export function EditorSurface({
       setPendingStroke(null);
       setPendingElementId(null);
     }
+    setContainerDropTargetId(null);
 
     const world = screenToWorld(local);
     const targetElementId =
@@ -1813,6 +1850,17 @@ export function EditorSurface({
           );
         },
       );
+      const primaryForDrop = elements.find((element) => element.id === selectedId);
+      if (primaryForDrop) {
+        const previewPrimary = {
+          ...primaryForDrop,
+          x: snappedPosition?.x ?? primaryForDrop.x + dx,
+          y: snappedPosition?.y ?? primaryForDrop.y + dy,
+        };
+        setContainerDropTargetId(findContainerDropTarget(previewPrimary, elements));
+      } else {
+        setContainerDropTargetId(null);
+      }
       if (snapDisabled) {
         setSnapGuide(null);
       } else {
@@ -2001,6 +2049,7 @@ export function EditorSurface({
       setHoveredElementId(null);
       setDragMode(null);
       setSnapGuide(null);
+      setContainerDropTargetId(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
       return;
@@ -2032,6 +2081,7 @@ export function EditorSurface({
       rotateDragRef.current = null;
       setIsPanning(false);
       setSnapGuide(null);
+      setContainerDropTargetId(null);
       setHoveredElementId(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
@@ -2059,6 +2109,7 @@ export function EditorSurface({
       setDragMode(null);
       setIsPanning(false);
       setSnapGuide(null);
+      setContainerDropTargetId(null);
       setHoveredElementId(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
@@ -2179,6 +2230,7 @@ export function EditorSurface({
     setResizeHandle(null);
     setIsPanning(false);
     setSnapGuide(null);
+    setContainerDropTargetId(null);
     setHoveredElementId(null);
     dragStartRef.current = null;
     lastPointerWorldRef.current = null;
@@ -3418,17 +3470,22 @@ export function EditorSurface({
             }
 
             if (element.kind === "container") {
+              const isContainerDropTarget = containerDropTargetId === element.id;
               return (
                 <div
                   key={element.id}
                   aria-label={`Shape ${element.kind}`}
                   data-element-id={element.id}
+                  data-drop-target={isContainerDropTarget ? "true" : undefined}
                   style={{
                     ...style,
                     borderColor,
                     background: isFilledStyle
                       ? "rgba(148, 163, 184, 0.08)"
                       : "transparent",
+                    boxShadow: isContainerDropTarget
+                      ? "0 0 0 2px var(--gd-color-selection-handle-border) inset"
+                      : undefined,
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >

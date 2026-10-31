@@ -132,6 +132,40 @@ export function autoSizeContainers(
   });
 }
 
+export function inheritLayerFromParents(
+  elements: DiagramElement[],
+): DiagramElement[] {
+  const byId = new Map(elements.map((element) => [element.id, element]));
+  const resolvedLayer = new Map<string, number | undefined>();
+
+  const resolveLayer = (
+    element: DiagramElement,
+    visited = new Set<string>(),
+  ): number | undefined => {
+    if (resolvedLayer.has(element.id)) {
+      return resolvedLayer.get(element.id);
+    }
+    if (!element.parentId) {
+      resolvedLayer.set(element.id, element.layer);
+      return element.layer;
+    }
+    if (visited.has(element.id)) {
+      resolvedLayer.set(element.id, element.layer);
+      return element.layer;
+    }
+    visited.add(element.id);
+    const parent = byId.get(element.parentId);
+    const layer = parent ? resolveLayer(parent, visited) : element.layer;
+    resolvedLayer.set(element.id, layer);
+    return layer;
+  };
+
+  return elements.map((element) => ({
+    ...element,
+    layer: resolveLayer(element),
+  }));
+}
+
 export function releaseChildrenFromParents(
   elements: DiagramElement[],
   parentIds: Iterable<string>,
