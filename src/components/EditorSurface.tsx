@@ -197,6 +197,10 @@ function isElementLocked(element: DiagramElement): boolean {
   return Boolean(element.locked);
 }
 
+function supportsInlineTextEditing(element: DiagramElement): boolean {
+  return element.kind !== "line" && element.kind !== "ink";
+}
+
 function createDefaultLayer(): EditorLayer {
   return {
     id: crypto.randomUUID(),
@@ -585,6 +589,17 @@ export function EditorSurface({
     );
   };
 
+  const startInlineTextEdit = useCallback(
+    (element: DiagramElement) => {
+      if (!supportsInlineTextEditing(element) || isElementInteractionLocked(element)) {
+        return;
+      }
+      setEditingTextElementId(element.id);
+      setTextDraft(element.text ?? "");
+    },
+    [isElementInteractionLocked],
+  );
+
   const instantiateClipboardElements = useCallback(
     (source: DiagramElement[], offsetStep: number) => {
       const idMap = new Map<string, string>();
@@ -768,9 +783,11 @@ export function EditorSurface({
         kind: nextKind,
         text: nextKind === "text" ? element.text ?? "" : element.text,
       }));
-      if (nextKind === "text") {
-        setEditingTextElementId(selectedId);
-        setTextDraft(selectedElement?.text ?? "");
+      if (selectedElement) {
+        startInlineTextEdit({
+          ...selectedElement,
+          kind: nextKind,
+        });
       }
       return;
     }
@@ -1386,8 +1403,7 @@ export function EditorSurface({
         );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
-        setEditingTextElementId(textElement.id);
-        setTextDraft(textElement.text ?? "");
+        startInlineTextEdit(textElement);
       }
       setStroke([]);
     } else if (stroke.length > 0 && dragMode === "draw") {
@@ -1397,8 +1413,7 @@ export function EditorSurface({
         );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
-        setEditingTextElementId(textElement.id);
-        setTextDraft(textElement.text ?? "");
+        startInlineTextEdit(textElement);
         setStroke([]);
         setMarqueeSelection(null);
         setDragMode(null);
@@ -1415,8 +1430,7 @@ export function EditorSurface({
         );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
-        setEditingTextElementId(textElement.id);
-        setTextDraft(textElement.text ?? "");
+        startInlineTextEdit(textElement);
         setStroke([]);
         setMarqueeSelection(null);
         setDragMode(null);
@@ -1432,8 +1446,7 @@ export function EditorSurface({
         );
         applyElementsWithInvariants((current) => [...current, textElement]);
         setSelection(makeSelection([textElement.id]));
-        setEditingTextElementId(textElement.id);
-        setTextDraft(textElement.text ?? "");
+        startInlineTextEdit(textElement);
         setStroke([]);
         setMarqueeSelection(null);
         setDragMode(null);
@@ -1481,9 +1494,8 @@ export function EditorSurface({
           return [...current, nextElement];
         });
         setSelection(makeSelection([snappedElement.id]));
-        if (snappedElement.kind === "text") {
-          setEditingTextElementId(snappedElement.id);
-          setTextDraft(snappedElement.text ?? "");
+        if (supportsInlineTextEditing(snappedElement)) {
+          startInlineTextEdit(snappedElement);
         }
       }
       setStroke([]);
@@ -1497,6 +1509,18 @@ export function EditorSurface({
     setHoveredElementId(null);
     dragStartRef.current = null;
     lastPointerWorldRef.current = null;
+  };
+
+  const handleElementDoubleClick = (
+    element: DiagramElement,
+    event: ReactMouseEvent<HTMLElement | SVGElement>,
+  ) => {
+    if (readOnly) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    startInlineTextEdit(element);
   };
 
   const handleKeepInk = () => {
@@ -1538,9 +1562,8 @@ export function EditorSurface({
       return [...current, nextElement];
     });
     setSelection(makeSelection([snappedElement.id]));
-    if (snappedElement.kind === "text") {
-      setEditingTextElementId(snappedElement.id);
-      setTextDraft(snappedElement.text ?? "");
+    if (supportsInlineTextEditing(snappedElement)) {
+      startInlineTextEdit(snappedElement);
     }
     setPendingDecision(null);
     setPendingStroke(null);
@@ -1552,7 +1575,7 @@ export function EditorSurface({
     }
     applyElementsWithInvariants((current) =>
       current.map((element) =>
-        element.id === editingTextElementId && element.kind === "text"
+        element.id === editingTextElementId && supportsInlineTextEditing(element)
           ? {
               ...element,
               text: textDraft.trim(),
@@ -2360,10 +2383,29 @@ export function EditorSurface({
               );
             }
 
+            const centeredLabelStyle: CSSProperties = {
+              position: "absolute",
+              inset: 0,
+              padding: "8px 10px",
+              color: baseColor,
+              fontSize: "14px",
+              lineHeight: "18px",
+              textAlign: "center",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+              userSelect: "none",
+              boxSizing: "border-box",
+            };
+
             if (element.kind === "diamond") {
               return (
-                <svg
+                <div
                   key={element.id}
+                  aria-label={`Shape ${element.kind}`}
                   style={{
                     position: "absolute",
                     left: element.x,
@@ -2372,21 +2414,36 @@ export function EditorSurface({
                     height: element.height,
                     overflow: "visible",
                   }}
+                  onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
-                  <polygon
-                    points={`${element.width / 2},0 ${element.width},${element.height / 2} ${element.width / 2},${element.height} 0,${element.height / 2}`}
-                    fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
-                    stroke={isSelected ? selectedColor : baseColor}
-                    strokeWidth={strokeWidth}
-                  />
-                </svg>
+                  <svg
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      overflow: "visible",
+                    }}
+                  >
+                    <polygon
+                      points={`${element.width / 2},0 ${element.width},${element.height / 2} ${element.width / 2},${element.height} 0,${element.height / 2}`}
+                      fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                      stroke={isSelected ? selectedColor : baseColor}
+                      strokeWidth={strokeWidth}
+                    />
+                  </svg>
+                  {element.text?.trim() ? (
+                    <div style={centeredLabelStyle}>{element.text}</div>
+                  ) : null}
+                </div>
               );
             }
 
             if (element.kind === "triangle") {
               return (
-                <svg
+                <div
                   key={element.id}
+                  aria-label={`Shape ${element.kind}`}
                   style={{
                     position: "absolute",
                     left: element.x,
@@ -2395,20 +2452,39 @@ export function EditorSurface({
                     height: element.height,
                     overflow: "visible",
                   }}
+                  onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
-                  <polygon
-                    points={`${element.width / 2},0 ${element.width},${element.height} 0,${element.height}`}
-                    fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
-                    stroke={isSelected ? selectedColor : baseColor}
-                    strokeWidth={strokeWidth}
-                  />
-                </svg>
+                  <svg
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      overflow: "visible",
+                    }}
+                  >
+                    <polygon
+                      points={`${element.width / 2},0 ${element.width},${element.height} 0,${element.height}`}
+                      fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                      stroke={isSelected ? selectedColor : baseColor}
+                      strokeWidth={strokeWidth}
+                    />
+                  </svg>
+                  {element.text?.trim() ? (
+                    <div style={centeredLabelStyle}>{element.text}</div>
+                  ) : null}
+                </div>
               );
             }
 
             if (element.kind === "text") {
               return (
-                <div key={element.id} style={style}>
+                <div
+                  key={element.id}
+                  aria-label={`Shape ${element.kind}`}
+                  style={style}
+                  onDoubleClick={(event) => handleElementDoubleClick(element, event)}
+                >
                   <div
                     style={{
                       width: "100%",
@@ -2422,10 +2498,11 @@ export function EditorSurface({
                       boxSizing: "border-box",
                       userSelect: "none",
                       whiteSpace: "pre-wrap",
-                    }}
-                    onDoubleClick={() => {
-                      setEditingTextElementId(element.id);
-                      setTextDraft(element.text ?? "");
+                      textAlign: "center",
+                      wordBreak: "break-word",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                     }}
                   >
                     {element.text && element.text.length > 0
@@ -2440,25 +2517,18 @@ export function EditorSurface({
               return (
                 <div
                   key={element.id}
+                  aria-label={`Shape ${element.kind}`}
                   style={{
                     ...style,
                     borderStyle: "dashed",
                     borderColor: isSelected ? selectedColor : baseColor,
                     background: "rgba(148, 163, 184, 0.08)",
                   }}
+                  onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 8,
-                      top: 6,
-                      fontSize: 12,
-                      color: baseColor,
-                      userSelect: "none",
-                    }}
-                  >
-                    {element.text?.trim() || "Container"}
-                  </div>
+                  {element.text?.trim() ? (
+                    <div style={centeredLabelStyle}>{element.text}</div>
+                  ) : null}
                 </div>
               );
             }
@@ -2467,16 +2537,33 @@ export function EditorSurface({
               return (
                 <div
                   key={element.id}
+                  aria-label={`Shape ${element.kind}`}
                   style={{
                     ...style,
                     borderRadius: "50%",
                     background: "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))",
                   }}
-                />
+                  onDoubleClick={(event) => handleElementDoubleClick(element, event)}
+                >
+                  {element.text?.trim() ? (
+                    <div style={centeredLabelStyle}>{element.text}</div>
+                  ) : null}
+                </div>
               );
             }
 
-            return <div key={element.id} style={style} />;
+            return (
+              <div
+                key={element.id}
+                aria-label={`Shape ${element.kind}`}
+                style={style}
+                onDoubleClick={(event) => handleElementDoubleClick(element, event)}
+              >
+                {element.text?.trim() ? (
+                  <div style={centeredLabelStyle}>{element.text}</div>
+                ) : null}
+              </div>
+            );
           })}
 
           {visibleElements
@@ -2543,7 +2630,8 @@ export function EditorSurface({
             (() => {
               const editingElement = elements.find(
                 (element) =>
-                  element.id === editingTextElementId && element.kind === "text",
+                  element.id === editingTextElementId &&
+                  supportsInlineTextEditing(element),
               );
               if (!editingElement) {
                 return null;
