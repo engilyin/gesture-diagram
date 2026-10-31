@@ -259,6 +259,7 @@ type EditorSurfaceProps = {
   document?: DiagramDocument;
   readOnly?: boolean;
   profileId?: string;
+  initialSelectionIds?: string[];
   onDocumentChange?: (document: DiagramDocument) => void;
 };
 
@@ -266,6 +267,7 @@ export function EditorSurface({
   document,
   readOnly = false,
   profileId,
+  initialSelectionIds,
   onDocumentChange,
 }: EditorSurfaceProps) {
   const initialSettings = useMemo(
@@ -293,7 +295,7 @@ export function EditorSurface({
   const [elements, setElements] = useState<DiagramElement[]>(
     document ? [...document.elements] : [],
   );
-  const [selection, setSelection] = useState(makeSelection());
+  const [selection, setSelection] = useState(makeSelection(initialSelectionIds ?? []));
   const [stroke, setStroke] = useState<Point[]>([]);
   const [strokeGhost, setStrokeGhost] = useState<DiagramElement | null>(null);
   const [pendingDecision, setPendingDecision] =
@@ -549,8 +551,11 @@ export function EditorSurface({
       return;
     }
 
+    const expandedSelectionIds = new Set(
+      getGroupedSelectionIds(elements, selection.ids),
+    );
     const selectedElements = elements.filter((element) =>
-      selection.ids.includes(element.id),
+      expandedSelectionIds.has(element.id),
     );
     const hasLockedSelection = selectedElements.some((element) =>
       isElementInteractionLocked(element),
@@ -562,29 +567,79 @@ export function EditorSurface({
     const canUngroup = selectedElements.some((element) =>
       Boolean(element.groupId),
     );
+    const canArrange = selectedElements.length > 1;
 
     const nextActions: PaletteAction[] = [
       { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 1 },
+      ...(canArrange
+        ? [
+              { id: "align-left", label: "Align Left", kind: "align-left" as const, rank: 2 },
+              {
+                id: "align-center",
+                label: "Align Center",
+                kind: "align-center" as const,
+                rank: 3,
+              },
+              { id: "align-right", label: "Align Right", kind: "align-right" as const, rank: 4 },
+              { id: "align-top", label: "Align Top", kind: "align-top" as const, rank: 5 },
+              {
+                id: "align-middle",
+                label: "Align Middle",
+                kind: "align-middle" as const,
+                rank: 6,
+              },
+              {
+                id: "align-bottom",
+                label: "Align Bottom",
+                kind: "align-bottom" as const,
+                rank: 7,
+              },
+              {
+                id: "distribute-horizontal",
+                label: "Distribute Horizontal",
+                kind: "distribute-horizontal" as const,
+                rank: 8,
+              },
+              {
+                id: "distribute-vertical",
+                label: "Distribute Vertical",
+                kind: "distribute-vertical" as const,
+                rank: 9,
+              },
+              {
+                id: "match-width",
+                label: "Match Width",
+                kind: "match-width" as const,
+                rank: 10,
+              },
+              {
+                id: "match-height",
+                label: "Match Height",
+                kind: "match-height" as const,
+                rank: 11,
+              },
+            ]
+        : []),
       ...(canGroup
-        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 2 }]
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 12 }]
         : []),
       ...(canUngroup
         ? [
             {
-              id: "ungroup",
-              label: "Ungroup",
-              kind: "ungroup" as const,
-              rank: 3,
-            },
-          ]
+                id: "ungroup",
+                label: "Ungroup",
+                kind: "ungroup" as const,
+                rank: 13,
+              },
+            ]
         : []),
       ...(hasUnlockedSelection
-        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 4 }]
+        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 14 }]
         : []),
       ...(hasLockedSelection
-        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 5 }]
+        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 15 }]
         : []),
-      { id: "delete", label: "Delete", kind: "delete", rank: 6 },
+      { id: "delete", label: "Delete", kind: "delete", rank: 16 },
     ];
 
     setSelectedActions(nextActions);
@@ -684,6 +739,122 @@ export function EditorSurface({
     x: element.x + element.width / 2,
     y: element.y + element.height / 2,
   });
+
+  const alignSelection = useCallback(
+    (targets: DiagramElement[], mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => {
+      if (targets.length < 2) {
+        return;
+      }
+      const ids = new Set(targets.map((element) => element.id));
+      const minX = Math.min(...targets.map((element) => element.x));
+      const maxX = Math.max(...targets.map((element) => element.x + element.width));
+      const minY = Math.min(...targets.map((element) => element.y));
+      const maxY = Math.max(...targets.map((element) => element.y + element.height));
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+
+      applyElementsWithInvariants((current) =>
+        current.map((element) => {
+          if (!ids.has(element.id)) {
+            return element;
+          }
+          if (mode === "left") {
+            return { ...element, x: minX };
+          }
+          if (mode === "center") {
+            return { ...element, x: centerX - element.width / 2 };
+          }
+          if (mode === "right") {
+            return { ...element, x: maxX - element.width };
+          }
+          if (mode === "top") {
+            return { ...element, y: minY };
+          }
+          if (mode === "middle") {
+            return { ...element, y: centerY - element.height / 2 };
+          }
+          return { ...element, y: maxY - element.height };
+        }),
+      );
+    },
+    [applyElementsWithInvariants],
+  );
+
+  const distributeSelection = useCallback(
+    (targets: DiagramElement[], axis: "horizontal" | "vertical") => {
+      if (targets.length < 3) {
+        return;
+      }
+      const sorted = [...targets].sort((a, b) =>
+        axis === "horizontal"
+          ? getElementCenter(a).x - getElementCenter(b).x
+          : getElementCenter(a).y - getElementCenter(b).y,
+      );
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      if (!first || !last) {
+        return;
+      }
+      const firstCenter = getElementCenter(first);
+      const lastCenter = getElementCenter(last);
+      const span =
+        axis === "horizontal"
+          ? lastCenter.x - firstCenter.x
+          : lastCenter.y - firstCenter.y;
+      if (!Number.isFinite(span) || span === 0) {
+        return;
+      }
+      const step = span / (sorted.length - 1);
+      const byId = new Map(
+        sorted.map((element, index) => [element.id, firstCenter[axis === "horizontal" ? "x" : "y"] + step * index]),
+      );
+
+      applyElementsWithInvariants((current) =>
+        current.map((element) => {
+          const targetCenter = byId.get(element.id);
+          if (targetCenter === undefined) {
+            return element;
+          }
+          if (axis === "horizontal") {
+            return {
+              ...element,
+              x: targetCenter - element.width / 2,
+            };
+          }
+          return {
+            ...element,
+            y: targetCenter - element.height / 2,
+          };
+        }),
+      );
+    },
+    [applyElementsWithInvariants],
+  );
+
+  const matchSelectionSize = useCallback(
+    (targets: DiagramElement[], axis: "width" | "height") => {
+      if (targets.length < 2) {
+        return;
+      }
+      const primary = targets.find((element) => element.id === selectedId) ?? targets[0];
+      if (!primary) {
+        return;
+      }
+      const nextSize = axis === "width" ? primary.width : primary.height;
+      const ids = new Set(targets.map((element) => element.id));
+      applyElementsWithInvariants((current) =>
+        current.map((element) => {
+          if (!ids.has(element.id)) {
+            return element;
+          }
+          return axis === "width"
+            ? { ...element, width: nextSize }
+            : { ...element, height: nextSize };
+        }),
+      );
+    },
+    [applyElementsWithInvariants, selectedId],
+  );
 
   const updateSelectedElement = useCallback(
     (updater: (element: DiagramElement) => DiagramElement) => {
@@ -864,8 +1035,68 @@ export function EditorSurface({
       return;
     }
 
+    const expandedSelectionIds = new Set(
+      getGroupedSelectionIds(elements, selection.ids),
+    );
+    const selectedElements = elements.filter((element) =>
+      expandedSelectionIds.has(element.id),
+    );
+    const unlockedSelectedElements = selectedElements.filter(
+      (element) => !isElementInteractionLocked(element),
+    );
+
     if (action.kind === "duplicate") {
       duplicateSelection();
+      return;
+    }
+
+    if (action.kind === "align-left") {
+      alignSelection(unlockedSelectedElements, "left");
+      return;
+    }
+
+    if (action.kind === "align-center") {
+      alignSelection(unlockedSelectedElements, "center");
+      return;
+    }
+
+    if (action.kind === "align-right") {
+      alignSelection(unlockedSelectedElements, "right");
+      return;
+    }
+
+    if (action.kind === "align-top") {
+      alignSelection(unlockedSelectedElements, "top");
+      return;
+    }
+
+    if (action.kind === "align-middle") {
+      alignSelection(unlockedSelectedElements, "middle");
+      return;
+    }
+
+    if (action.kind === "align-bottom") {
+      alignSelection(unlockedSelectedElements, "bottom");
+      return;
+    }
+
+    if (action.kind === "distribute-horizontal") {
+      distributeSelection(unlockedSelectedElements, "horizontal");
+      return;
+    }
+
+    if (action.kind === "distribute-vertical") {
+      distributeSelection(unlockedSelectedElements, "vertical");
+      return;
+    }
+
+    if (action.kind === "match-width") {
+      matchSelectionSize(unlockedSelectedElements, "width");
+      return;
+    }
+
+    if (action.kind === "match-height") {
+      matchSelectionSize(unlockedSelectedElements, "height");
       return;
     }
 
@@ -1060,9 +1291,9 @@ export function EditorSurface({
       layers: incomingLayers,
     });
     setActiveLayerId(incomingLayers[0]?.id ?? "");
-    setSelection(makeSelection());
+    setSelection(makeSelection(initialSelectionIds ?? []));
     resetHistory(document.elements);
-  }, [document, resetHistory]);
+  }, [document, initialSelectionIds, resetHistory]);
 
   useEffect(() => {
     onDocumentChange?.(buildDocument());
