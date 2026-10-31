@@ -30,7 +30,7 @@ describe("STORY-C06 document settings", () => {
       const latest = onDocumentChange.mock.calls[
         onDocumentChange.mock.calls.length - 1
       ]?.[0] as DiagramDocument | undefined;
-      expect(latest?.settings).toEqual({
+      expect(latest?.settings).toMatchObject({
         title: "Sprint architecture",
         background: "#f1f5f9",
         canvas: {
@@ -38,6 +38,7 @@ describe("STORY-C06 document settings", () => {
           height: 900,
         },
       });
+      expect(latest?.settings?.layers?.length).toBeGreaterThan(0);
     });
   });
 });
