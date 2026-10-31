@@ -225,6 +225,58 @@ button {
   box-shadow: 0 10px 30px var(--gd-color-toolbar-shadow);
 }
 
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  padding: var(--gd-space-4);
+}
+
+.onboarding-panel {
+  width: min(760px, 100%);
+  border: 1px solid var(--gd-color-border);
+  border-radius: var(--gd-radius-lg);
+  background: var(--gd-color-surface);
+  color: var(--gd-color-text);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+  padding: var(--gd-space-4);
+}
+
+.onboarding-panel h2 {
+  margin: 0 0 var(--gd-space-1);
+}
+
+.onboarding-panel p {
+  margin: 0 0 var(--gd-space-3);
+}
+
+.onboarding-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gd-space-2);
+}
+
+.onboarding-sections section h3 {
+  margin: 0 0 var(--gd-space-1);
+}
+
+.onboarding-sections ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.onboarding-actions {
+  margin-top: var(--gd-space-3);
+  display: flex;
+  justify-content: flex-end;
+}
+
 .gesture-fallback-panel {
   display: flex;
   align-items: center;
