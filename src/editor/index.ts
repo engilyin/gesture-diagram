@@ -91,6 +91,7 @@ export {
   getProfile,
   listProfiles,
 } from "./profiles/registry";
+export { runPanZoomBenchmark, type PanZoomBenchmarkResult } from "./performance";
 export type {
   CollaborationAdapter,
   CollaborationAdapterError,
