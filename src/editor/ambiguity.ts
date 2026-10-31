@@ -95,23 +95,12 @@ export function evaluateAmbiguity(points: Point[]): AmbiguityDecision {
     },
   ].sort((a, b) => b.confidence - a.confidence);
 
-  const [best, second] = ranked;
-
-  if (
-    best.kind !== "ink" &&
-    best.confidence >= 0.78 &&
-    best.confidence - second.confidence >= 0.12
-  ) {
-    return {
-      kind: best.kind,
-      confidence: best.confidence,
-      alternatives: ranked.filter((candidate) => candidate.kind !== best.kind),
-    };
-  }
-
+  const best =
+    ranked.find((candidate) => candidate.kind !== "ink") ??
+    ranked[0] ?? { kind: "ink" as const, confidence: 0 };
   return {
-    kind: "ink",
-    confidence: 0.45,
-    alternatives: ranked.filter((candidate) => candidate.kind !== "ink"),
+    kind: best.kind,
+    confidence: best.confidence,
+    alternatives: ranked.filter((candidate) => candidate.kind !== best.kind),
   };
 }
