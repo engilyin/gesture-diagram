@@ -8,7 +8,7 @@ describe("STORY-A11Y01 keyboard-first editing", () => {
     fireEvent.keyDown(window, { key: "n" });
 
     expect(screen.getByText(/Selected: 1/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Shape rect")).toBeInTheDocument();
+    expect(screen.getByLabelText(/rect shape:/i)).toBeInTheDocument();
     expect(screen.getByText("Created rectangle with keyboard.")).toBeInTheDocument();
   });
 
@@ -74,7 +74,7 @@ describe("STORY-A11Y01 keyboard-first editing", () => {
     fireEvent.keyDown(window, { key: "Tab" });
     fireEvent.keyDown(window, { key: "k" });
 
-    expect(screen.getByLabelText("Connector")).toBeInTheDocument();
+    expect(screen.getByLabelText("Connector from A to B")).toBeInTheDocument();
     const latestDocument =
       onDocumentChange.mock.calls[onDocumentChange.mock.calls.length - 1]?.[0];
     const connector = latestDocument?.elements?.find(
