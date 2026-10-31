@@ -270,6 +270,7 @@ export function EditorSurface({
   const [pendingDecision, setPendingDecision] =
     useState<AmbiguityDecision | null>(null);
   const [pendingStroke, setPendingStroke] = useState<Point[] | null>(null);
+  const [pendingElementId, setPendingElementId] = useState<string | null>(null);
   const [selectedActions, setSelectedActions] = useState<PaletteAction[]>([]);
   const [persistenceMessage, setPersistenceMessage] = useState<string | null>(
     null,
@@ -1234,6 +1235,7 @@ export function EditorSurface({
     if (pendingDecision) {
       setPendingDecision(null);
       setPendingStroke(null);
+      setPendingElementId(null);
     }
 
     const world = screenToWorld(local);
@@ -1639,17 +1641,13 @@ export function EditorSurface({
       }
       const result = recognizeStroke(normalized);
       const decision = evaluateAmbiguity(normalized);
-      const mismatchedIntent =
-        decision.kind !== "ink" && decision.kind !== result.kind;
-
-      const shouldConfirmFallback =
-        result.kind === "ink" ||
-        !result.element ||
-        (result.confidence < 0.7 && (decision.kind === "ink" || mismatchedIntent));
-
-      if (shouldConfirmFallback) {
-        setPendingDecision(decision);
-        setPendingStroke(normalized);
+      const bounds = getStrokeBounds(normalized);
+      const shouldKeepAsInkOnly =
+        bounds.maxX - bounds.minX < 20 && bounds.maxY - bounds.minY < 20;
+      if (shouldKeepAsInkOnly) {
+        const inkElement = assignLayerToElement(createInk(normalized));
+        applyElementsWithInvariants((current) => [...current, inkElement]);
+        setSelection(makeSelection([inkElement.id]));
         setStroke([]);
         setMarqueeSelection(null);
         setDragMode(null);
@@ -1660,25 +1658,32 @@ export function EditorSurface({
         return;
       }
 
-      const recognizedElement = result.element;
-      if (recognizedElement) {
-        const snappedElement = {
-          ...assignLayerToElement(recognizedElement),
-          x: snapToGrid(recognizedElement.x),
-          y: snapToGrid(recognizedElement.y),
-        };
-        applyElementsWithInvariants((current) => {
-          const nextElement =
-            snappedElement.kind === "line"
-              ? attachConnectorEndpoints(current, snappedElement)
-              : snappedElement;
-          return [...current, nextElement];
-        });
-        setSelection(makeSelection([snappedElement.id]));
-        if (supportsInlineTextEditing(snappedElement)) {
-          startInlineTextEdit(snappedElement);
-        }
+      const threshold = 0.4;
+      const fallbackKind: ShapeChoice =
+        decision.kind === "line" ? "line" : "rect";
+      const recognizedElement =
+        result.kind !== "ink" && result.element && result.confidence >= threshold
+          ? result.element
+          : createShapeFromStroke(fallbackKind, normalized);
+      const snappedElement = {
+        ...assignLayerToElement(recognizedElement),
+        x: snapToGrid(recognizedElement.x),
+        y: snapToGrid(recognizedElement.y),
+      };
+      applyElementsWithInvariants((current) => {
+        const nextElement =
+          snappedElement.kind === "line"
+            ? attachConnectorEndpoints(current, snappedElement)
+            : snappedElement;
+        return [...current, nextElement];
+      });
+      setSelection(makeSelection([snappedElement.id]));
+      if (supportsInlineTextEditing(snappedElement)) {
+        startInlineTextEdit(snappedElement);
       }
+      setPendingDecision(decision);
+      setPendingStroke(normalized);
+      setPendingElementId(snappedElement.id);
       setStroke([]);
     }
 
@@ -1711,17 +1716,32 @@ export function EditorSurface({
 
     if (pendingStroke && pendingStroke.length > 1) {
       const inkElement = assignLayerToElement(createInk(pendingStroke));
-      applyElementsWithInvariants((current) => [...current, inkElement]);
-      setSelection(makeSelection([inkElement.id]));
+      if (pendingElementId) {
+        applyElementsWithInvariants((current) =>
+          current.map((element) =>
+            element.id === pendingElementId
+              ? {
+                  ...inkElement,
+                  id: pendingElementId,
+                }
+              : element,
+          ),
+        );
+        setSelection(makeSelection([pendingElementId]));
+      } else {
+        applyElementsWithInvariants((current) => [...current, inkElement]);
+        setSelection(makeSelection([inkElement.id]));
+      }
     }
     setPendingDecision(null);
     setPendingStroke(null);
+    setPendingElementId(null);
   };
 
   const handleDismissFallback = () => {
     setPendingDecision(null);
     setPendingStroke(null);
-    setSelection(makeSelection());
+    setPendingElementId(null);
   };
 
   const handleChooseShape = (kind: ShapeChoice) => {
@@ -1735,19 +1755,31 @@ export function EditorSurface({
       x: snapToGrid(chosen.x),
       y: snapToGrid(chosen.y),
     };
+    const activeId = pendingElementId ?? snappedElement.id;
     applyElementsWithInvariants((current) => {
       const nextElement =
         snappedElement.kind === "line"
           ? attachConnectorEndpoints(current, snappedElement)
           : snappedElement;
+      if (pendingElementId) {
+        return current.map((element) =>
+          element.id === pendingElementId
+            ? {
+                ...nextElement,
+                id: pendingElementId,
+              }
+            : element,
+        );
+      }
       return [...current, nextElement];
     });
-    setSelection(makeSelection([snappedElement.id]));
+    setSelection(makeSelection([activeId]));
     if (supportsInlineTextEditing(snappedElement)) {
       startInlineTextEdit(snappedElement);
     }
     setPendingDecision(null);
     setPendingStroke(null);
+    setPendingElementId(null);
   };
 
   const commitTextEdit = useCallback(() => {
@@ -2430,7 +2462,7 @@ export function EditorSurface({
 
       {pendingDecision && (
         <GestureFallbackPanel
-          message={`Gesture confidence is low (${pendingDecision.confidence.toFixed(2)}). Keep as ink or dismiss.`}
+          message={`Pick a shape style or keep as ink (${pendingDecision.confidence.toFixed(2)} confidence).`}
           onKeepInk={handleKeepInk}
           onRetryRecognition={handleDismissFallback}
           onChooseShape={handleChooseShape}
