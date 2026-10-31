@@ -62,6 +62,7 @@ import {
 import { exportSvg } from "../editor/export/svg";
 import { exportPng } from "../editor/export/png";
 import { exportPdf } from "../editor/export/pdf";
+import { exportDrawIo } from "../editor/export/drawio";
 import { importDrawIo } from "../editor/import/drawio";
 import { importMermaid } from "../editor/import/mermaid";
 import {
@@ -1676,6 +1677,30 @@ export function EditorSurface({
       setPersistenceMessage(null);
       setPersistenceError(
         `PDF export failed: ${
+          error instanceof Error ? error.message : "Unknown export error."
+        }`,
+      );
+    }
+  };
+
+  const handleExportDrawIo = () => {
+    try {
+      const xml = exportDrawIo(buildDocument());
+      const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = createDownloadFilename().replace(/\.yaml$/, ".drawio");
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPersistenceError(null);
+      setPersistenceMessage("Exported draw.io file.");
+    } catch (error) {
+      setPersistenceMessage(null);
+      setPersistenceError(
+        `draw.io export failed: ${
           error instanceof Error ? error.message : "Unknown export error."
         }`,
       );
@@ -3579,6 +3604,7 @@ export function EditorSurface({
           onExportSvg={handleExportSvg}
           onExportPng={handleExportPng}
           onExportPdf={handleExportPdf}
+          onExportDrawIo={handleExportDrawIo}
           onImport={handleImport}
         />
       )}
