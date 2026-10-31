@@ -643,17 +643,54 @@ export function EditorSurface({
     return null;
   }, [hoveredElement, isElementInteractionLocked, selectedElement]);
 
-  const renderableElements = useMemo(() => {
+  const { renderableElements, hiddenConnectionIndicatorByElementId } = useMemo(() => {
     const layerVisibleElements = elements.filter((element) => {
       const layerIndex = element.layer ?? 0;
       return (layerByIndex.get(layerIndex)?.visible ?? true) && !element.hidden;
     });
-    const elementsById = new Map(
+    const visibleElementsById = new Map(
       layerVisibleElements.map((element) => [element.id, element]),
     );
-    return layerVisibleElements.filter(
-      (element) => !isHiddenByCollapsedAncestor(element, elementsById),
+    const visibleElementIds = new Set(layerVisibleElements.map((element) => element.id));
+    const baseRenderableElements = layerVisibleElements.filter(
+      (element) => !isHiddenByCollapsedAncestor(element, visibleElementsById),
     );
+    const baseRenderableIds = new Set(baseRenderableElements.map((element) => element.id));
+    const hiddenConnectionIndicatorCounts = new Map<string, number>();
+
+    elements.forEach((element) => {
+      if (element.kind !== "line" || !element.connector) {
+        return;
+      }
+      const fromVisible = visibleElementIds.has(element.connector.fromId);
+      const toVisible = visibleElementIds.has(element.connector.toId);
+      if (fromVisible === toVisible) {
+        return;
+      }
+      const visibleEndpointId = fromVisible ? element.connector.fromId : element.connector.toId;
+      if (!baseRenderableIds.has(visibleEndpointId)) {
+        return;
+      }
+      hiddenConnectionIndicatorCounts.set(
+        visibleEndpointId,
+        (hiddenConnectionIndicatorCounts.get(visibleEndpointId) ?? 0) + 1,
+      );
+    });
+
+    const nextRenderableElements = baseRenderableElements.filter((element) => {
+      if (element.kind !== "line" || !element.connector) {
+        return true;
+      }
+      return (
+        visibleElementIds.has(element.connector.fromId) &&
+        visibleElementIds.has(element.connector.toId)
+      );
+    });
+
+    return {
+      renderableElements: nextRenderableElements,
+      hiddenConnectionIndicatorByElementId: hiddenConnectionIndicatorCounts,
+    };
   }, [elements, layerByIndex]);
 
   const visibleElements = useMemo(
@@ -5079,6 +5116,46 @@ export function EditorSurface({
                 🔒
               </div>
             ))}
+
+          {visibleElements
+            .filter(
+              (element) =>
+                isConnectableElement(element) &&
+                (hiddenConnectionIndicatorByElementId.get(element.id) ?? 0) > 0,
+            )
+            .map((element) => {
+              const hiddenConnectionCount =
+                hiddenConnectionIndicatorByElementId.get(element.id) ?? 0;
+              return (
+                <div
+                  key={`hidden-connection-${element.id}`}
+                  aria-label={`${hiddenConnectionCount} hidden connection${hiddenConnectionCount === 1 ? "" : "s"}`}
+                  title={`${hiddenConnectionCount} hidden connection${hiddenConnectionCount === 1 ? "" : "s"}`}
+                  style={{
+                    position: "absolute",
+                    left: element.x + element.width - 18,
+                    top: element.y + 8,
+                    minWidth: 18,
+                    height: 18,
+                    borderRadius: 999,
+                    border: "1px solid var(--gd-color-warning-border, #ea580c)",
+                    background: "var(--gd-color-warning-bg, #ffedd5)",
+                    color: "var(--gd-color-warning-text, #9a3412)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "0 5px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    zIndex: 12,
+                    pointerEvents: "none",
+                  }}
+                >
+                  {hiddenConnectionCount}
+                </div>
+              );
+            })}
 
           {gizmoElement && (
             <SelectionHandles

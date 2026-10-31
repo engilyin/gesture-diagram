@@ -184,31 +184,24 @@ export function enforceConnectorInvariants(
   const validIds = new Set(elements.map((element) => element.id));
   const elementsById = new Map(elements.map((element) => [element.id, element]));
   let changed = false;
-
-  const repairedElements = elements.map((element) => {
+  const repairedElements: DiagramElement[] = [];
+  elements.forEach((element) => {
     if (element.kind !== 'line' || !element.connector) {
-      return element;
+      repairedElements.push(element);
+      return;
     }
 
     const { fromId, toId } = element.connector;
     if (fromId === toId || !validIds.has(fromId) || !validIds.has(toId)) {
       changed = true;
-      return {
-        ...element,
-        connector: undefined,
-        points: undefined,
-      };
+      return;
     }
 
     const from = elementsById.get(fromId);
     const to = elementsById.get(toId);
     if (!from || !to || !isConnectable(from) || !isConnectable(to)) {
       changed = true;
-      return {
-        ...element,
-        connector: undefined,
-        points: undefined,
-      };
+      return;
     }
 
     const fromAnchorContainer = getCollapsedAncestor(from, elementsById);
@@ -243,17 +236,18 @@ export function enforceConnectorInvariants(
       pointsChanged
     ) {
       changed = true;
-      return {
+      repairedElements.push({
         ...element,
         x: nextX,
         y: nextY,
         width: nextWidth,
         height: nextHeight,
         points: routedPoints,
-      };
+      });
+      return;
     }
 
-    return element;
+    repairedElements.push(element);
   });
 
   return {
