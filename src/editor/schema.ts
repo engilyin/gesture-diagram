@@ -20,7 +20,9 @@ function isValidElement(input: unknown): input is DiagramElement {
     typeof candidate.x === 'number' &&
     typeof candidate.y === 'number' &&
     typeof candidate.width === 'number' &&
-    typeof candidate.height === 'number'
+    typeof candidate.height === 'number' &&
+    (candidate.locked == null || typeof candidate.locked === "boolean") &&
+    (candidate.parentId == null || typeof candidate.parentId === "string")
   );
 }
 

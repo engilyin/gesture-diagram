@@ -1,6 +1,6 @@
 export type DiagramElement = {
   id: string;
-  kind: "rect" | "ellipse" | "diamond" | "triangle" | "line" | "ink" | "text";
+  kind: "rect" | "ellipse" | "diamond" | "triangle" | "line" | "ink" | "text" | "container";
   x: number;
   y: number;
   width: number;
@@ -12,6 +12,7 @@ export type DiagramElement = {
   points?: Point[];
   layer?: number;
   groupId?: string;
+  parentId?: string;
   connector?: {
     fromId: string;
     toId: string;

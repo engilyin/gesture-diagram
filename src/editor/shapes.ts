@@ -72,6 +72,25 @@ export function createTriangle(
   };
 }
 
+export function createContainer(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): DiagramElement {
+  return {
+    id: crypto.randomUUID(),
+    kind: "container",
+    x,
+    y,
+    width: Math.max(width, 160),
+    height: Math.max(height, 120),
+    color: "#334155",
+    strokeWidth: 2,
+    text: "Container",
+  };
+}
+
 export function createLine(
   x: number,
   y: number,
