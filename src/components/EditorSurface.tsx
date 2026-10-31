@@ -119,6 +119,10 @@ const paletteColorSwatches = [
 ];
 const defaultLayerColor = "#4f46e5";
 const onboardingDismissedStorageKey = "gd-onboarding-overlay-dismissed";
+const baseTextFontSize = 14;
+const baseTextLineHeight = 18;
+const textPaddingX = 16;
+const textPaddingY = 12;
 
 type DragMode = "draw" | "move" | "resize" | "rotate" | "marquee" | null;
 type HistoryEntry = {
@@ -333,6 +337,7 @@ function supportsInlineTextEditing(element: DiagramElement): boolean {
 
 type TextAlignHorizontal = "left" | "center" | "right";
 type TextAlignVertical = "top" | "middle" | "bottom";
+type TextOverflowMode = "grow-shape" | "shrink-text";
 
 function resolveTextAlignmentFromClick(
   element: DiagramElement,
@@ -356,6 +361,40 @@ function createDefaultLayer(): EditorLayer {
     color: defaultLayerColor,
     visible: true,
     locked: false,
+  };
+}
+
+function resolveTextOverflowMode(element: DiagramElement): TextOverflowMode {
+  return element.textOverflowMode ?? "grow-shape";
+}
+
+function estimateTextLineCount(text: string, width: number): number {
+  const usableWidth = Math.max(24, width - textPaddingX);
+  const approxCharsPerLine = Math.max(1, Math.floor(usableWidth / 7));
+  return text.split("\n").reduce((total, rawLine) => {
+    const lineLength = Math.max(rawLine.length, 1);
+    return total + Math.max(1, Math.ceil(lineLength / approxCharsPerLine));
+  }, 0);
+}
+
+function getAutoGrowHeightForText(text: string, width: number): number {
+  const lineCount = estimateTextLineCount(text, width);
+  return Math.max(32, lineCount * baseTextLineHeight + textPaddingY);
+}
+
+function resolveShrinkTextFontSize(
+  text: string,
+  width: number,
+  height: number,
+): { fontSize: number; lineHeight: number } {
+  const lineCount = estimateTextLineCount(text, width);
+  const usableHeight = Math.max(24, height - textPaddingY);
+  const estimatedHeightAtBase = Math.max(1, lineCount * baseTextLineHeight);
+  const scale = Math.min(1, usableHeight / estimatedHeightAtBase);
+  const fontSize = Math.max(10, Math.round(baseTextFontSize * scale));
+  return {
+    fontSize,
+    lineHeight: Math.max(12, Math.round(fontSize * 1.3)),
   };
 }
 
@@ -1579,6 +1618,19 @@ export function EditorSurface({
     [readOnly, selectedElement, updateSelectedElement],
   );
 
+  const handleSelectTextOverflowMode = useCallback(
+    (textOverflowMode: TextOverflowMode) => {
+      if (readOnly || !selectedElement || !supportsInlineTextEditing(selectedElement)) {
+        return;
+      }
+      updateSelectedElement((element) => ({
+        ...element,
+        textOverflowMode,
+      }));
+    },
+    [readOnly, selectedElement, updateSelectedElement],
+  );
+
   const selectedStyleVariant: PaletteStyleVariant | null = selectedElement
     ? selectedElement.styleVariant ?? getDefaultStyleVariant(selectedElement.kind)
     : null;
@@ -1587,6 +1639,9 @@ export function EditorSurface({
     : undefined;
   const selectedTextAlignVertical: TextAlignVertical | undefined = selectedElement
     ? selectedElement.textAlignVertical ?? "middle"
+    : undefined;
+  const selectedTextOverflowMode: TextOverflowMode | undefined = selectedElement
+    ? resolveTextOverflowMode(selectedElement)
     : undefined;
 
   const shouldShowShapeCustomizer =
@@ -2660,13 +2715,25 @@ export function EditorSurface({
     if (!editingTextElementId) {
       return;
     }
+    const nextText = textDraft.trim();
     applyElementsWithInvariants((current) =>
       current.map((element) =>
         element.id === editingTextElementId && supportsInlineTextEditing(element)
-          ? {
-              ...element,
-              text: textDraft.trim(),
-            }
+          ? (() => {
+              const textOverflowMode = resolveTextOverflowMode(element);
+              const nextHeight =
+                textOverflowMode === "grow-shape" && nextText.length > 0
+                  ? Math.max(
+                      element.height,
+                      getAutoGrowHeightForText(nextText, element.width),
+                    )
+                  : element.height;
+              return {
+                ...element,
+                text: nextText,
+                height: nextHeight,
+              };
+            })()
           : element,
       ),
     );
@@ -4002,6 +4069,16 @@ export function EditorSurface({
             onSelectTextAlignVertical={
               shouldShowShapeCustomizer ? handleSelectTextAlignVertical : undefined
             }
+            selectedTextOverflowMode={
+              shouldShowShapeCustomizer && selectedElement && supportsInlineTextEditing(selectedElement)
+                ? selectedTextOverflowMode
+                : undefined
+            }
+            onSelectTextOverflowMode={
+              shouldShowShapeCustomizer && selectedElement && supportsInlineTextEditing(selectedElement)
+                ? handleSelectTextOverflowMode
+                : undefined
+            }
           />
         )}
 
@@ -4243,13 +4320,18 @@ export function EditorSurface({
                 : textAlignVertical === "bottom"
                   ? "flex-end"
                   : "center";
+            const textOverflowMode = resolveTextOverflowMode(element);
+            const textSizing =
+              textOverflowMode === "shrink-text" && element.text?.trim()
+                ? resolveShrinkTextFontSize(element.text, element.width, element.height)
+                : { fontSize: baseTextFontSize, lineHeight: baseTextLineHeight };
             const centeredLabelStyle: CSSProperties = {
               position: "absolute",
               inset: 0,
               padding: "8px 10px",
               color: baseColor,
-              fontSize: "14px",
-              lineHeight: "18px",
+              fontSize: `${textSizing.fontSize}px`,
+              lineHeight: `${textSizing.lineHeight}px`,
               textAlign: textAlignHorizontal,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
@@ -4376,8 +4458,8 @@ export function EditorSurface({
                         : "transparent",
                       padding: "6px 8px",
                       color: baseColor,
-                      fontSize: "14px",
-                      lineHeight: "18px",
+                      fontSize: `${textSizing.fontSize}px`,
+                      lineHeight: `${textSizing.lineHeight}px`,
                       overflow: "hidden",
                       boxSizing: "border-box",
                       userSelect: "none",

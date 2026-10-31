@@ -67,6 +67,8 @@ interface ContextPaletteProps {
   selectedTextAlignVertical?: "top" | "middle" | "bottom";
   onSelectTextAlignHorizontal?: (value: "left" | "center" | "right") => void;
   onSelectTextAlignVertical?: (value: "top" | "middle" | "bottom") => void;
+  selectedTextOverflowMode?: "grow-shape" | "shrink-text";
+  onSelectTextOverflowMode?: (value: "grow-shape" | "shrink-text") => void;
 }
 
 export function ContextPalette({
@@ -85,6 +87,8 @@ export function ContextPalette({
   selectedTextAlignVertical,
   onSelectTextAlignHorizontal,
   onSelectTextAlignVertical,
+  selectedTextOverflowMode,
+  onSelectTextOverflowMode,
 }: ContextPaletteProps) {
   const profile = profileId ? getProfile(profileId) : null;
   const priorityByKind = new Map<string, number>(
@@ -187,6 +191,26 @@ export function ContextPalette({
                 </button>
               ))
             : null}
+        </div>
+      ) : null}
+
+      {onSelectTextOverflowMode ? (
+        <div className="context-palette-section">
+          {([
+            ["grow-shape", "Overflow: Grow shape"],
+            ["shrink-text", "Overflow: Shrink text"],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={`text-overflow-${mode}`}
+              type="button"
+              className="context-palette-style-button"
+              aria-label={`Set text overflow ${mode}`}
+              aria-pressed={selectedTextOverflowMode === mode}
+              onClick={() => onSelectTextOverflowMode(mode)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       ) : null}
 

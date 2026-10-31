@@ -16,6 +16,7 @@ export function createRectangle(
     color: "#4f46e5",
     strokeWidth: 2,
     rotation: 0,
+    textOverflowMode: "grow-shape",
   };
 }
 
@@ -35,6 +36,7 @@ export function createEllipse(
     color: "#4f46e5",
     strokeWidth: 2,
     rotation: 0,
+    textOverflowMode: "grow-shape",
   };
 }
 
@@ -54,6 +56,7 @@ export function createDiamond(
     color: "#4f46e5",
     strokeWidth: 2,
     rotation: 0,
+    textOverflowMode: "grow-shape",
   };
 }
 
@@ -73,6 +76,7 @@ export function createTriangle(
     color: "#4f46e5",
     strokeWidth: 2,
     rotation: 0,
+    textOverflowMode: "grow-shape",
   };
 }
 
@@ -93,6 +97,7 @@ export function createContainer(
     strokeWidth: 2,
     rotation: 0,
     text: "Container",
+    textOverflowMode: "grow-shape",
     containerLayoutMode: "free",
     collapsed: false,
   };
@@ -137,6 +142,7 @@ export function createText(
     color: "#111827",
     strokeWidth: 1,
     rotation: 0,
+    textOverflowMode: "grow-shape",
   };
 }
 

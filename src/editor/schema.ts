@@ -29,6 +29,9 @@ function isValidElement(input: unknown): input is DiagramElement {
       candidate.textAlignVertical === "top" ||
       candidate.textAlignVertical === "middle" ||
       candidate.textAlignVertical === "bottom") &&
+    (candidate.textOverflowMode == null ||
+      candidate.textOverflowMode === "grow-shape" ||
+      candidate.textOverflowMode === "shrink-text") &&
     (candidate.rotation == null || typeof candidate.rotation === "number") &&
     (candidate.locked == null || typeof candidate.locked === "boolean") &&
     (candidate.hidden == null || typeof candidate.hidden === "boolean") &&
