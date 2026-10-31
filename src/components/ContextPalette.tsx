@@ -3,7 +3,15 @@ import { getProfile } from "../editor/profiles/registry";
 export type PaletteAction = {
   id: string;
   label: string;
-  kind: "convert" | "style" | "duplicate" | "delete" | "group" | "ungroup";
+  kind:
+    | "convert"
+    | "style"
+    | "duplicate"
+    | "delete"
+    | "group"
+    | "ungroup"
+    | "lock"
+    | "unlock";
   rank: number;
 };
 
@@ -19,7 +27,7 @@ export function ContextPalette({
   onAction,
 }: ContextPaletteProps) {
   const profile = profileId ? getProfile(profileId) : null;
-  const priorityByKind = new Map(
+  const priorityByKind = new Map<string, number>(
     (profile?.actionPriority ?? []).map((kind, index) => [kind, index]),
   );
 

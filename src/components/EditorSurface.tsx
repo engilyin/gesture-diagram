@@ -174,6 +174,10 @@ function looksLikeTextGesture(points: Point[]): boolean {
   return width >= 40 && height <= 52 && width > height * 2;
 }
 
+function isElementLocked(element: DiagramElement): boolean {
+  return Boolean(element.locked);
+}
+
 type EditorSurfaceProps = {
   document?: DiagramDocument;
   readOnly?: boolean;
@@ -366,6 +370,12 @@ export function EditorSurface({
     const selectedElements = elements.filter((element) =>
       selection.ids.includes(element.id),
     );
+    const hasLockedSelection = selectedElements.some((element) =>
+      isElementLocked(element),
+    );
+    const hasUnlockedSelection = selectedElements.some(
+      (element) => !isElementLocked(element),
+    );
     const canGroup = selection.ids.length > 1;
     const canUngroup = selectedElements.some((element) =>
       Boolean(element.groupId),
@@ -388,7 +398,13 @@ export function EditorSurface({
             },
           ]
         : []),
-      { id: "delete", label: "Delete", kind: "delete", rank: 6 },
+      ...(hasUnlockedSelection
+        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 6 }]
+        : []),
+      ...(hasLockedSelection
+        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 7 }]
+        : []),
+      { id: "delete", label: "Delete", kind: "delete", rank: 8 },
     ];
 
     setSelectedActions(nextActions);
@@ -666,6 +682,22 @@ export function EditorSurface({
       return;
     }
 
+    if (action.kind === "lock" || action.kind === "unlock") {
+      const targetIds = new Set(getGroupedSelectionIds(elements, selection.ids));
+      const lockedState = action.kind === "lock";
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          targetIds.has(element.id)
+            ? {
+                ...element,
+                locked: lockedState,
+              }
+            : element,
+        ),
+      );
+      return;
+    }
+
     if (action.kind === "group" && selection.ids.length > 1) {
       const groupId = crypto.randomUUID();
       applyElementsWithInvariants((current) =>
@@ -696,7 +728,10 @@ export function EditorSurface({
         getGroupedSelectionIds(elements, [selectedId]),
       );
       applyElementsWithInvariants((current) =>
-        current.filter((element) => !idsToDelete.has(element.id)),
+        current.filter(
+          (element) =>
+            !idsToDelete.has(element.id) || isElementLocked(element),
+        ),
       );
       setSelection(makeSelection());
     }
@@ -950,6 +985,17 @@ export function EditorSurface({
     const hitElement = hitTestElement(world);
 
     if (hitElement) {
+      if (isElementLocked(hitElement)) {
+        const nextSelection = hitElement.groupId
+          ? getGroupedSelectionIds(elements, [hitElement.id])
+          : [hitElement.id];
+        setSelection(makeSelection(nextSelection));
+        setStroke([]);
+        setDragMode(null);
+        setSnapGuide(null);
+        return;
+      }
+
       if (event.metaKey || event.ctrlKey) {
         const nextIds = selection.ids.includes(hitElement.id)
           ? selection.ids.filter((id) => id !== hitElement.id)
@@ -1005,6 +1051,18 @@ export function EditorSurface({
     }
 
     if (dragMode === "move" && selectedId && lastPointerWorldRef.current) {
+      const movableIds = selection.ids.filter((id) => {
+        const target = elements.find((element) => element.id === id);
+        if (!target) {
+          return false;
+        }
+        return !isElementLocked(target);
+      });
+      if (movableIds.length === 0) {
+        setDragMode(null);
+        lastPointerWorldRef.current = null;
+        return;
+      }
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
       const snapDisabled = event.altKey;
@@ -1013,7 +1071,7 @@ export function EditorSurface({
 
       if (!snapDisabled && selection.ids.length === 1) {
         const primary = elements.find((element) => element.id === selectedId);
-        if (primary && primary.kind !== "line") {
+        if (primary && primary.kind !== "line" && !isElementLocked(primary)) {
           const preview = { ...primary, x: primary.x + dx, y: primary.y + dy };
           const others = elements.filter((element) => element.id !== selectedId);
           const shapeSnap = findSnapGuide(preview, others);
@@ -1028,7 +1086,7 @@ export function EditorSurface({
 
       applyElementsWithInvariants((current) =>
         {
-          const moved = moveGroupedElements(current, selection.ids, dx, dy);
+          const moved = moveGroupedElements(current, movableIds, dx, dy);
           if (snapDisabled || selection.ids.length !== 1 || !snappedPosition) {
             return moved;
           }
@@ -1055,6 +1113,12 @@ export function EditorSurface({
       resizeHandle &&
       lastPointerWorldRef.current
     ) {
+      const selected = elements.find((element) => element.id === selectedId);
+      if (!selected || isElementLocked(selected)) {
+        setDragMode(null);
+        setResizeHandle(null);
+        return;
+      }
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
       applyElementsWithInvariants((current) =>
@@ -1344,6 +1408,9 @@ export function EditorSurface({
     if (readOnly) {
       return;
     }
+    if (!selectedElement || isElementLocked(selectedElement)) {
+      return;
+    }
 
     event.preventDefault();
     event.stopPropagation();
@@ -1464,12 +1531,22 @@ export function EditorSurface({
       if (selection.ids.length === 0) {
         return;
       }
+      const unlockedSelectionIds = selection.ids.filter((id) => {
+        const element = elements.find((item) => item.id === id);
+        if (!element) {
+          return false;
+        }
+        return !isElementLocked(element);
+      });
+      if (unlockedSelectionIds.length === 0) {
+        return;
+      }
 
       applyElementsWithInvariants((current) =>
-        nudgeSelectedElements(current, selection.ids, dx, dy),
+        nudgeSelectedElements(current, unlockedSelectionIds, dx, dy),
       );
     },
-    [applyElementsWithInvariants, selection.ids],
+    [applyElementsWithInvariants, elements, selection.ids],
   );
 
   useEffect(() => {
@@ -1990,7 +2067,39 @@ export function EditorSurface({
             return <div key={element.id} style={style} />;
           })}
 
-          {selectedElement && selectedElement.kind !== "ink" && (
+          {visibleElements
+            .filter((element) => isElementLocked(element))
+            .map((element) => (
+              <div
+                key={`lock-${element.id}`}
+                aria-label="Locked element"
+                title="Locked element"
+                style={{
+                  position: "absolute",
+                  left: element.x + element.width - 18,
+                  top: element.y - 10,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 999,
+                  border: "1px solid var(--gd-color-selection-handle-border)",
+                  background: "var(--gd-color-surface)",
+                  color: "var(--gd-color-selection-handle-border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 12,
+                  lineHeight: 1,
+                  zIndex: 12,
+                  pointerEvents: "none",
+                }}
+              >
+                🔒
+              </div>
+            ))}
+
+          {selectedElement &&
+            selectedElement.kind !== "ink" &&
+            !isElementLocked(selectedElement) && (
             <SelectionHandles
               x={selectedElement.x}
               y={selectedElement.y}
