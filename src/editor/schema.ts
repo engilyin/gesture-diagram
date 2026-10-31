@@ -23,7 +23,12 @@ function isValidElement(input: unknown): input is DiagramElement {
     typeof candidate.height === 'number' &&
     (candidate.rotation == null || typeof candidate.rotation === "number") &&
     (candidate.locked == null || typeof candidate.locked === "boolean") &&
-    (candidate.parentId == null || typeof candidate.parentId === "string")
+    (candidate.parentId == null || typeof candidate.parentId === "string") &&
+    (candidate.containerLayoutMode == null ||
+      candidate.containerLayoutMode === "free" ||
+      candidate.containerLayoutMode === "row" ||
+      candidate.containerLayoutMode === "column" ||
+      candidate.containerLayoutMode === "grid")
   );
 }
 

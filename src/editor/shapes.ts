@@ -93,6 +93,7 @@ export function createContainer(
     strokeWidth: 2,
     rotation: 0,
     text: "Container",
+    containerLayoutMode: "free",
   };
 }
 

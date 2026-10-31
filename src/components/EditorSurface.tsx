@@ -579,6 +579,11 @@ export function EditorSurface({
       selectedElements.length === 1 &&
       selectedElements[0]?.kind !== "ink" &&
       !isElementInteractionLocked(selectedElements[0]);
+    const selectedContainer =
+      selectedElements.length === 1 && selectedElements[0]?.kind === "container"
+        ? selectedElements[0]
+        : null;
+    const currentLayoutMode = selectedContainer?.containerLayoutMode ?? "free";
 
     const nextActions: PaletteAction[] = [
       { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 1 },
@@ -641,8 +646,36 @@ export function EditorSurface({
               },
             ]
         : []),
+      ...(selectedContainer
+        ? [
+              {
+                id: "layout-free",
+                label: currentLayoutMode === "free" ? "Layout: Free ✓" : "Layout: Free",
+                kind: "layout-free" as const,
+                rank: 13,
+              },
+              {
+                id: "layout-row",
+                label: currentLayoutMode === "row" ? "Layout: Row ✓" : "Layout: Row",
+                kind: "layout-row" as const,
+                rank: 14,
+              },
+              {
+                id: "layout-column",
+                label: currentLayoutMode === "column" ? "Layout: Column ✓" : "Layout: Column",
+                kind: "layout-column" as const,
+                rank: 15,
+              },
+              {
+                id: "layout-grid",
+                label: currentLayoutMode === "grid" ? "Layout: Grid ✓" : "Layout: Grid",
+                kind: "layout-grid" as const,
+                rank: 16,
+              },
+            ]
+        : []),
       ...(canGroup
-        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 13 }]
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 17 }]
         : []),
       ...(canUngroup
         ? [
@@ -650,17 +683,17 @@ export function EditorSurface({
                 id: "ungroup",
                 label: "Ungroup",
                 kind: "ungroup" as const,
-                rank: 14,
+                rank: 18,
               },
             ]
         : []),
       ...(hasUnlockedSelection
-        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 15 }]
+        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 19 }]
         : []),
       ...(hasLockedSelection
-        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 16 }]
+        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 20 }]
         : []),
-      { id: "delete", label: "Delete", kind: "delete", rank: 17 },
+      { id: "delete", label: "Delete", kind: "delete", rank: 21 },
     ];
 
     setSelectedActions(nextActions);
@@ -670,13 +703,12 @@ export function EditorSurface({
     (updater: (current: DiagramElement[]) => DiagramElement[]) => {
     setElements((current) => {
       const updated = updater(current);
-      const ops = createOpsFromElementDiff(current, updated);
-      const opApplied = applyOps(current, ops);
-      const reconciled = reconcileContainerOwnership(opApplied);
+      const reconciled = reconcileContainerOwnership(updated);
       const layered = inheritLayerFromParents(reconciled);
       const resized = autoSizeContainers(layered);
       const repaired = enforceConnectorInvariants(resized);
       const nextElements = repaired.repairedElements;
+      const ops = createOpsFromElementDiff(current, nextElements);
 
       if (!applyingHistoryRef.current) {
         const currentJson = JSON.stringify(current);
@@ -1163,6 +1195,37 @@ export function EditorSurface({
 
     if (action.kind === "match-height") {
       matchSelectionSize(unlockedSelectedElements, "height");
+      return;
+    }
+
+    if (
+      action.kind === "layout-free" ||
+      action.kind === "layout-row" ||
+      action.kind === "layout-column" ||
+      action.kind === "layout-grid"
+    ) {
+      const layoutMode =
+        action.kind === "layout-row"
+          ? "row"
+          : action.kind === "layout-column"
+            ? "column"
+            : action.kind === "layout-grid"
+              ? "grid"
+              : "free";
+      const target = unlockedSelectedElements[0];
+      if (!target || target.kind !== "container") {
+        return;
+      }
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          element.id === target.id
+            ? {
+                ...element,
+                containerLayoutMode: layoutMode,
+              }
+            : element,
+        ),
+      );
       return;
     }
 
