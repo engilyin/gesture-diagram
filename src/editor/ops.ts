@@ -49,6 +49,7 @@ const trackedProperties: DiagramElementPatchProperty[] = [
   "color",
   "strokeWidth",
   "styleVariant",
+  "styleTokenId",
   "rotation",
   "points",
   "layer",

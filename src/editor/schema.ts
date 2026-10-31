@@ -32,6 +32,7 @@ function isValidElement(input: unknown): input is DiagramElement {
     (candidate.textOverflowMode == null ||
       candidate.textOverflowMode === "grow-shape" ||
       candidate.textOverflowMode === "shrink-text") &&
+    (candidate.styleTokenId == null || typeof candidate.styleTokenId === "string") &&
     (candidate.connectorRouting == null ||
       candidate.connectorRouting === "straight" ||
       candidate.connectorRouting === "orthogonal" ||
@@ -94,12 +95,27 @@ function isValidDocumentSettings(
           typeof layer.visible === "boolean" &&
           typeof layer.locked === "boolean",
       ));
+  const styleTokens = candidate.styleTokens;
+  const validStyleTokens =
+    styleTokens == null ||
+    (Array.isArray(styleTokens) &&
+      styleTokens.every(
+        (token) =>
+          token &&
+          typeof token === "object" &&
+          typeof token.id === "string" &&
+          typeof token.name === "string" &&
+          (token.color == null || typeof token.color === "string") &&
+          (token.fontSize == null || typeof token.fontSize === "number") &&
+          (token.strokeWidth == null || typeof token.strokeWidth === "number"),
+      ));
 
   return (
     (candidate.title == null || typeof candidate.title === "string") &&
     (candidate.background == null || typeof candidate.background === "string") &&
     validCanvas &&
-    validLayers
+    validLayers &&
+    validStyleTokens
   );
 }
 

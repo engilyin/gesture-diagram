@@ -1,5 +1,5 @@
 import { getProfile } from "../editor/profiles/registry";
-import type { DiagramElement } from "../editor/types";
+import type { DiagramElement, DiagramStyleToken } from "../editor/types";
 
 export type PaletteStyleVariant = "filled" | "outlined" | "dashed";
 
@@ -73,6 +73,9 @@ interface ContextPaletteProps {
   onSelectConnectorRouting?: (
     value: "straight" | "orthogonal" | "curved",
   ) => void;
+  styleTokens?: DiagramStyleToken[];
+  selectedStyleTokenId?: string;
+  onSelectStyleToken?: (tokenId?: string) => void;
 }
 
 export function ContextPalette({
@@ -95,6 +98,9 @@ export function ContextPalette({
   onSelectTextOverflowMode,
   selectedConnectorRouting,
   onSelectConnectorRouting,
+  styleTokens = [],
+  selectedStyleTokenId,
+  onSelectStyleToken,
 }: ContextPaletteProps) {
   const profile = profileId ? getProfile(profileId) : null;
   const priorityByKind = new Map<string, number>(
@@ -232,6 +238,32 @@ export function ContextPalette({
               onClick={() => onSelectConnectorRouting(mode)}
             >
               Route:{mode}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {onSelectStyleToken && styleTokens.length > 0 ? (
+        <div className="context-palette-section">
+          <button
+            type="button"
+            className="context-palette-style-button"
+            aria-label="Clear style token"
+            aria-pressed={!selectedStyleTokenId}
+            onClick={() => onSelectStyleToken(undefined)}
+          >
+            Token:none
+          </button>
+          {styleTokens.map((token) => (
+            <button
+              key={token.id}
+              type="button"
+              className="context-palette-style-button"
+              aria-label={`Apply style token ${token.name}`}
+              aria-pressed={selectedStyleTokenId === token.id}
+              onClick={() => onSelectStyleToken(token.id)}
+            >
+              Token:{token.name}
             </button>
           ))}
         </div>
