@@ -21,14 +21,14 @@ const handleDescriptors: Array<{
   label: string;
   style: React.CSSProperties;
 }> = [
-  { handle: "nw", label: "Resize north-west", style: { left: -6, top: -6 } },
-  { handle: "ne", label: "Resize north-east", style: { right: -6, top: -6 } },
+  { handle: "nw", label: "Resize north-west", style: { left: -8, top: -8 } },
+  { handle: "ne", label: "Resize north-east", style: { right: -8, top: -8 } },
   {
     handle: "se",
     label: "Resize south-east",
-    style: { right: -6, bottom: -6 },
+    style: { right: -8, bottom: -8 },
   },
-  { handle: "sw", label: "Resize south-west", style: { left: -6, bottom: -6 } },
+  { handle: "sw", label: "Resize south-west", style: { left: -8, bottom: -8 } },
 ];
 
 export function SelectionHandles({
@@ -74,10 +74,10 @@ export function SelectionHandles({
             aria-label={`Rotate near ${handle}`}
             style={{
               ...style,
-              left: style.left != null ? Number(style.left) - 18 : style.left,
-              right: style.right != null ? Number(style.right) - 18 : style.right,
-              top: style.top != null ? Number(style.top) - 18 : style.top,
-              bottom: style.bottom != null ? Number(style.bottom) - 18 : style.bottom,
+              left: style.left != null ? Number(style.left) - 24 : style.left,
+              right: style.right != null ? Number(style.right) - 24 : style.right,
+              top: style.top != null ? Number(style.top) - 24 : style.top,
+              bottom: style.bottom != null ? Number(style.bottom) - 24 : style.bottom,
               cursor: isRotating ? "grabbing" : "grab",
             }}
             onPointerDown={(event) => onRotateStart(handle, event)}

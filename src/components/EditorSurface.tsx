@@ -435,6 +435,7 @@ export function EditorSurface({
   const [collapsedOutlineLayers, setCollapsedOutlineLayers] = useState<string[]>([]);
   const [collapsedOutlineGroups, setCollapsedOutlineGroups] = useState<string[]>([]);
   const [isLayoutDialogOpen, setIsLayoutDialogOpen] = useState(false);
+  const [isToolbarMenuOpen, setIsToolbarMenuOpen] = useState(false);
   const [libraryFilter, setLibraryFilter] = useState("");
   const [soloLayerId, setSoloLayerId] = useState<string | null>(null);
 
@@ -3351,25 +3352,60 @@ export function EditorSurface({
         <button type="button" onClick={() => handleZoomButton(-0.1)}>
           Zoom Out
         </button>
-        <button type="button" onClick={handleFitToContent}>
-          Fit to Content
-        </button>
-        {!readOnly && (
-          <button type="button" onClick={() => setIsLayoutDialogOpen(true)}>
-            Layout
-          </button>
-        )}
         <button type="button" onClick={performUndo} disabled={!canUndo}>
           Undo
         </button>
         <button type="button" onClick={performRedo} disabled={!canRedo}>
           Redo
         </button>
-        {!readOnly && (
-          <button type="button" onClick={handleOpenOnboarding}>
-            Cheat Sheet
+        <div className="toolbar-overflow">
+          <button
+            type="button"
+            aria-label="More actions"
+            aria-expanded={isToolbarMenuOpen}
+            onClick={() => setIsToolbarMenuOpen((current) => !current)}
+          >
+            …
           </button>
-        )}
+          {isToolbarMenuOpen && (
+            <div className="toolbar-overflow-menu" role="menu" aria-label="Toolbar overflow">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  handleFitToContent();
+                  setIsToolbarMenuOpen(false);
+                }}
+              >
+                Fit to Content
+              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setIsLayoutDialogOpen(true);
+                    setIsToolbarMenuOpen(false);
+                  }}
+                >
+                  Layout
+                </button>
+              )}
+              {!readOnly && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    handleOpenOnboarding();
+                    setIsToolbarMenuOpen(false);
+                  }}
+                >
+                  Cheat Sheet
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <span aria-live="polite">
           Zoom: {summary.scale.toFixed(2)} | Selected: {summary.selected}
         </span>
@@ -3439,50 +3475,55 @@ export function EditorSurface({
           </div>
         </div>
       )}
+
+      <div className="editor-workbench">
       {!readOnly && (
-        <fieldset className="document-settings-panel" aria-label="Document settings">
-          <legend>Document settings</legend>
-          <label>
-            Title
-            <input
-              aria-label="Document title"
-              value={documentSettings.title ?? ""}
-              onChange={(event) => handleTitleChange(event.target.value)}
-            />
-          </label>
-          <label>
-            Background
-            <input
-              aria-label="Document background color"
-              type="color"
-              value={documentSettings.background ?? defaultCanvasBackground}
-              onChange={(event) => handleBackgroundChange(event.target.value)}
-            />
-          </label>
-          <label>
-            Canvas width hint
-            <input
-              aria-label="Canvas width hint"
-              type="number"
-              min={1}
-              value={documentSettings.canvas?.width ?? ""}
-              onChange={(event) => handleCanvasHintChange("width", event.target.value)}
-            />
-          </label>
-          <label>
-            Canvas height hint
-            <input
-              aria-label="Canvas height hint"
-              type="number"
-              min={1}
-              value={documentSettings.canvas?.height ?? ""}
-              onChange={(event) => handleCanvasHintChange("height", event.target.value)}
-            />
-          </label>
-        </fieldset>
+        <aside className="editor-sidebar editor-sidebar-right" aria-label="Properties panel">
+          <fieldset className="document-settings-panel" aria-label="Document settings">
+            <legend>Document settings</legend>
+            <label>
+              Title
+              <input
+                aria-label="Document title"
+                value={documentSettings.title ?? ""}
+                onChange={(event) => handleTitleChange(event.target.value)}
+              />
+            </label>
+            <label>
+              Background
+              <input
+                aria-label="Document background color"
+                type="color"
+                value={documentSettings.background ?? defaultCanvasBackground}
+                onChange={(event) => handleBackgroundChange(event.target.value)}
+              />
+            </label>
+            <label>
+              Canvas width hint
+              <input
+                aria-label="Canvas width hint"
+                type="number"
+                min={1}
+                value={documentSettings.canvas?.width ?? ""}
+                onChange={(event) => handleCanvasHintChange("width", event.target.value)}
+              />
+            </label>
+            <label>
+              Canvas height hint
+              <input
+                aria-label="Canvas height hint"
+                type="number"
+                min={1}
+                value={documentSettings.canvas?.height ?? ""}
+                onChange={(event) => handleCanvasHintChange("height", event.target.value)}
+              />
+            </label>
+          </fieldset>
+        </aside>
       )}
 
       {!readOnly && (
+        <aside className="editor-sidebar editor-sidebar-left" aria-label="Left sidebar">
         <fieldset className="layer-panel" aria-label="Layer panel">
           <legend>Layers</legend>
           <div className="layer-panel-actions">
@@ -3562,9 +3603,7 @@ export function EditorSurface({
             })}
           </ul>
         </fieldset>
-      )}
 
-      {!readOnly && (
         <fieldset className="layer-panel" aria-label="Outline panel">
           <legend>Outline</legend>
           <div className="layer-panel-actions">
@@ -3755,9 +3794,7 @@ export function EditorSurface({
             })}
           </ul>
         </fieldset>
-      )}
 
-      {!readOnly && (
         <fieldset className="layer-panel" aria-label="Library panel">
           <legend>Library</legend>
           <div className="layer-panel-actions">
@@ -3807,8 +3844,10 @@ export function EditorSurface({
             ))}
           </ul>
         </fieldset>
+        </aside>
       )}
 
+      <div className="editor-canvas-panel">
       {!readOnly && (
         <DocumentPersistenceControls
           onSave={handleSave}
@@ -4572,6 +4611,8 @@ export function EditorSurface({
               );
             })()}
         </div>
+      </div>
+      </div>
       </div>
     </div>
   );

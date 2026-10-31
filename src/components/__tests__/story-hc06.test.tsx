@@ -37,7 +37,8 @@ describe("STORY-HC06 global auto-layout", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Layout" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Layout" }));
     expect(screen.getByRole("dialog", { name: "Layout dialog" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Grid" }));
