@@ -108,7 +108,7 @@ const paletteColorSwatches = [
 const defaultLayerColor = "#4f46e5";
 const onboardingDismissedStorageKey = "gd-onboarding-overlay-dismissed";
 
-type DragMode = "draw" | "move" | "resize" | "marquee" | null;
+type DragMode = "draw" | "move" | "resize" | "rotate" | "marquee" | null;
 type HistoryEntry = {
   undo: DiagramOp[];
   redo: DiagramOp[];
@@ -119,6 +119,12 @@ type ConnectionDragState = {
   start: Point;
   current: Point;
   targetId: string | null;
+};
+type RotateDragState = {
+  elementId: string;
+  center: Point;
+  startAngle: number;
+  initialRotation: number;
 };
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
@@ -315,6 +321,7 @@ export function EditorSurface({
   const [connectionDrag, setConnectionDrag] = useState<ConnectionDragState | null>(
     null,
   );
+  const rotateDragRef = useRef<RotateDragState | null>(null);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [editingTextElementId, setEditingTextElementId] = useState<string | null>(
     null,
@@ -330,6 +337,7 @@ export function EditorSurface({
   const clipboardRef = useRef<DiagramElement[] | null>(null);
   const pasteSequenceRef = useRef(0);
   const draggedLayerIdRef = useRef<string | null>(null);
+  const resizeTargetIdRef = useRef<string | null>(null);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -435,6 +443,26 @@ export function EditorSurface({
     },
     [layerByIndex],
   );
+
+  const gizmoElement = useMemo(() => {
+    if (
+      selectedElement &&
+      selectedElement.kind !== "line" &&
+      selectedElement.kind !== "ink" &&
+      !isElementInteractionLocked(selectedElement)
+    ) {
+      return selectedElement;
+    }
+    if (
+      hoveredElement &&
+      hoveredElement.kind !== "line" &&
+      hoveredElement.kind !== "ink" &&
+      !isElementInteractionLocked(hoveredElement)
+    ) {
+      return hoveredElement;
+    }
+    return null;
+  }, [hoveredElement, isElementInteractionLocked, selectedElement]);
 
   const visibleElements = useMemo(
     () =>
@@ -1472,23 +1500,27 @@ export function EditorSurface({
       return;
     }
 
-    if (
-      dragMode === "resize" &&
-      selectedId &&
-      resizeHandle &&
-      lastPointerWorldRef.current
-    ) {
-      const selected = elements.find((element) => element.id === selectedId);
+    if (dragMode === "resize" && resizeHandle && lastPointerWorldRef.current) {
+      const resizeElementId = selectedId ?? resizeTargetIdRef.current;
+      if (!resizeElementId) {
+        return;
+      }
+      const selected = elements.find((element) => element.id === resizeElementId);
       if (!selected || isElementInteractionLocked(selected)) {
         setDragMode(null);
         setResizeHandle(null);
+        resizeTargetIdRef.current = null;
         return;
       }
+
       const dx = world.x - lastPointerWorldRef.current.x;
       const dy = world.y - lastPointerWorldRef.current.y;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+        return;
+      }
       applyElementsWithInvariants((current) =>
         current.map((element) => {
-          if (element.id !== selectedId || element.kind === "ink") {
+          if (element.id !== resizeElementId || element.kind === "ink") {
             return element;
           }
 
@@ -1499,6 +1531,24 @@ export function EditorSurface({
         }),
       );
       lastPointerWorldRef.current = world;
+      return;
+    }
+
+    if (dragMode === "rotate" && rotateDragRef.current) {
+      const { center, startAngle, initialRotation, elementId } = rotateDragRef.current;
+      const currentAngle = Math.atan2(world.y - center.y, world.x - center.x);
+      const delta = currentAngle - startAngle;
+      const nextRotation = ((initialRotation + (delta * 180) / Math.PI) % 360 + 360) % 360;
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          element.id === elementId
+            ? {
+                ...element,
+                rotation: Number.parseFloat(nextRotation.toFixed(2)),
+              }
+            : element,
+        ),
+      );
       return;
     }
 
@@ -1634,9 +1684,30 @@ export function EditorSurface({
       return;
     }
 
-    if (dragMode === "move" || dragMode === "resize") {
+    if (dragMode === "rotate" && rotateDragRef.current && event) {
+      const { center, startAngle, initialRotation, elementId } = rotateDragRef.current;
+      const local = getLocalPoint(event);
+      const world = screenToWorld(local);
+      const currentAngle = Math.atan2(world.y - center.y, world.x - center.x);
+      const delta = currentAngle - startAngle;
+      const nextRotation = ((initialRotation + (delta * 180) / Math.PI) % 360 + 360) % 360;
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          element.id === elementId
+            ? {
+                ...element,
+                rotation: Number.parseFloat(nextRotation.toFixed(2)),
+              }
+            : element,
+        ),
+      );
+    }
+
+    if (dragMode === "move" || dragMode === "resize" || dragMode === "rotate") {
       setDragMode(null);
       setResizeHandle(null);
+      resizeTargetIdRef.current = null;
+      rotateDragRef.current = null;
       setIsPanning(false);
       setSnapGuide(null);
       setHoveredElementId(null);
@@ -1900,7 +1971,11 @@ export function EditorSurface({
     if (readOnly) {
       return;
     }
-    if (!selectedElement || isElementInteractionLocked(selectedElement)) {
+    const targetElement =
+      selectedElement && !isElementInteractionLocked(selectedElement)
+        ? selectedElement
+        : gizmoElement;
+    if (!targetElement) {
       return;
     }
 
@@ -1912,10 +1987,67 @@ export function EditorSurface({
     }
 
     const rect = surfaceRef.current.getBoundingClientRect();
-    const local = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const clientX = Number.isFinite(event.clientX) ? event.clientX : rect.left;
+    const clientY = Number.isFinite(event.clientY) ? event.clientY : rect.top;
+    const local = { x: clientX - rect.left, y: clientY - rect.top };
     lastPointerWorldRef.current = screenToWorld(local);
+    setSelection(makeSelection([targetElement.id]));
     setResizeHandle(handle);
+    resizeTargetIdRef.current = targetElement.id;
+    rotateDragRef.current = null;
     setDragMode("resize");
+  };
+
+  const handleRotateStart = (
+    handle: ResizeHandle,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (readOnly || !surfaceRef.current) {
+      return;
+    }
+    const targetElement =
+      selectedElement && !isElementInteractionLocked(selectedElement)
+        ? selectedElement
+        : gizmoElement;
+    if (!targetElement) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    setSelection(makeSelection([targetElement.id]));
+    const rect = surfaceRef.current.getBoundingClientRect();
+    const clientX = Number.isFinite(event.clientX) ? event.clientX : rect.left;
+    const clientY = Number.isFinite(event.clientY) ? event.clientY : rect.top;
+    const local = { x: clientX - rect.left, y: clientY - rect.top };
+    const world = screenToWorld(local);
+    const center = {
+      x: targetElement.x + targetElement.width / 2,
+      y: targetElement.y + targetElement.height / 2,
+    };
+    const cornerX = handle.includes("e")
+      ? targetElement.x + targetElement.width
+      : targetElement.x;
+    const cornerY = handle.includes("s")
+      ? targetElement.y + targetElement.height
+      : targetElement.y;
+    const startReference = {
+      x: cornerX,
+      y: cornerY,
+    };
+    const startAngle = Math.atan2(
+      world.y - center.y,
+      world.x - center.x,
+    ) || Math.atan2(startReference.y - center.y, startReference.x - center.x);
+    rotateDragRef.current = {
+      elementId: targetElement.id,
+      center,
+      startAngle,
+      initialRotation: targetElement.rotation ?? 0,
+    };
+    setResizeHandle(null);
+    setDragMode("rotate");
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -2748,6 +2880,9 @@ export function EditorSurface({
                 : "transparent",
               borderRadius: element.kind === "rect" ? 8 : 0,
               boxSizing: "border-box",
+              transform: `rotate(${element.rotation ?? 0}deg)`,
+              transformOrigin: "center",
+              cursor: isSelected ? (dragMode === "rotate" ? "grabbing" : "move") : "pointer",
             };
 
             if (element.kind === "line") {
@@ -2838,6 +2973,9 @@ export function EditorSurface({
                     width: element.width,
                     height: element.height,
                     overflow: "visible",
+                    transform: `rotate(${element.rotation ?? 0}deg)`,
+                    transformOrigin: "center",
+                    cursor: isSelected ? (dragMode === "rotate" ? "grabbing" : "move") : "pointer",
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
@@ -2881,6 +3019,9 @@ export function EditorSurface({
                     width: element.width,
                     height: element.height,
                     overflow: "visible",
+                    transform: `rotate(${element.rotation ?? 0}deg)`,
+                    transformOrigin: "center",
+                    cursor: isSelected ? (dragMode === "rotate" ? "grabbing" : "move") : "pointer",
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
@@ -3037,15 +3178,15 @@ export function EditorSurface({
               </div>
             ))}
 
-          {selectedElement &&
-            selectedElement.kind !== "ink" &&
-            !isElementInteractionLocked(selectedElement) && (
+          {gizmoElement && (
             <SelectionHandles
-              x={selectedElement.x}
-              y={selectedElement.y}
-              width={selectedElement.width}
-              height={selectedElement.height}
+              x={gizmoElement.x}
+              y={gizmoElement.y}
+              width={gizmoElement.width}
+              height={gizmoElement.height}
               onResizeStart={handleResizeStart}
+              onRotateStart={handleRotateStart}
+              isRotating={dragMode === "rotate"}
             />
           )}
 

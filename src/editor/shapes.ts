@@ -15,6 +15,7 @@ export function createRectangle(
     height,
     color: "#4f46e5",
     strokeWidth: 2,
+    rotation: 0,
   };
 }
 
@@ -33,6 +34,7 @@ export function createEllipse(
     height,
     color: "#4f46e5",
     strokeWidth: 2,
+    rotation: 0,
   };
 }
 
@@ -51,6 +53,7 @@ export function createDiamond(
     height,
     color: "#4f46e5",
     strokeWidth: 2,
+    rotation: 0,
   };
 }
 
@@ -69,6 +72,7 @@ export function createTriangle(
     height,
     color: "#4f46e5",
     strokeWidth: 2,
+    rotation: 0,
   };
 }
 
@@ -87,6 +91,7 @@ export function createContainer(
     height: Math.max(height, 120),
     color: "#334155",
     strokeWidth: 2,
+    rotation: 0,
     text: "Container",
   };
 }
@@ -109,6 +114,7 @@ export function createLine(
     height: connectorHeight,
     color: "#111827",
     strokeWidth: 3,
+    rotation: 0,
   };
 }
 
@@ -128,6 +134,7 @@ export function createText(
     text: "",
     color: "#111827",
     strokeWidth: 1,
+    rotation: 0,
   };
 }
 
@@ -148,6 +155,7 @@ export function createInk(points: Point[]): DiagramElement {
     height: Math.max(maxY - minY, 4),
     color: "#2563eb",
     strokeWidth: 3,
+    rotation: 0,
     points,
   };
 }

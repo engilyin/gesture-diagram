@@ -10,6 +10,7 @@ export type DiagramElement = {
   color?: string;
   strokeWidth?: number;
   styleVariant?: "filled" | "outlined" | "dashed";
+  rotation?: number;
   points?: Point[];
   layer?: number;
   groupId?: string;

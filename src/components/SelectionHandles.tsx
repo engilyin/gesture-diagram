@@ -9,6 +9,11 @@ interface SelectionHandlesProps {
     handle: ResizeHandle,
     event: React.PointerEvent<HTMLButtonElement>,
   ) => void;
+  onRotateStart?: (
+    handle: ResizeHandle,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
+  isRotating?: boolean;
 }
 
 const handleDescriptors: Array<{
@@ -32,6 +37,8 @@ export function SelectionHandles({
   width,
   height,
   onResizeStart,
+  onRotateStart,
+  isRotating = false,
 }: SelectionHandlesProps) {
   return (
     <div
@@ -50,10 +57,32 @@ export function SelectionHandles({
           type="button"
           className="selection-handle"
           aria-label={label}
-          style={style}
+          style={{
+            ...style,
+            cursor:
+              handle === "nw" || handle === "se" ? "nwse-resize" : "nesw-resize",
+          }}
           onPointerDown={(event) => onResizeStart(handle, event)}
         />
       ))}
+      {onRotateStart &&
+        handleDescriptors.map(({ handle, style }) => (
+          <button
+            key={`rotate-${handle}`}
+            type="button"
+            className="rotation-handle"
+            aria-label={`Rotate near ${handle}`}
+            style={{
+              ...style,
+              left: style.left != null ? Number(style.left) - 18 : style.left,
+              right: style.right != null ? Number(style.right) - 18 : style.right,
+              top: style.top != null ? Number(style.top) - 18 : style.top,
+              bottom: style.bottom != null ? Number(style.bottom) - 18 : style.bottom,
+              cursor: isRotating ? "grabbing" : "grab",
+            }}
+            onPointerDown={(event) => onRotateStart(handle, event)}
+          />
+        ))}
     </div>
   );
 }

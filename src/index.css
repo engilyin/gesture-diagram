@@ -496,6 +496,19 @@ button {
   pointer-events: auto;
 }
 
+.rotation-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  min-height: 10px;
+  padding: 0;
+  border-radius: var(--gd-radius-round);
+  border: 1px dashed var(--gd-color-selection-handle-border);
+  background: transparent;
+  pointer-events: auto;
+}
+
 .connection-ports {
   position: absolute;
   inset: 0;
