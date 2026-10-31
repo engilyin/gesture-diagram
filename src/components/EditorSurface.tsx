@@ -2451,36 +2451,35 @@ export function EditorSurface({
         ? hitTestConnectableElement(dropWorld, connectionDrag.fromId)
         : null;
       const targetId = connectionDrag.targetId ?? fallbackTarget?.id ?? null;
-      const draggedDistance = Math.hypot(
-        connectionDrag.current.x - connectionDrag.start.x,
-        connectionDrag.current.y - connectionDrag.start.y,
-      );
-      const connectableCandidates = elements.filter(
-        (element) =>
-          element.id !== connectionDrag.fromId &&
-          element.kind !== "line" &&
-          element.kind !== "ink",
-      );
-      const nearestCandidate =
-        draggedDistance >= 8 && connectableCandidates.length > 0
-          ? connectableCandidates.reduce<DiagramElement | null>((closest, candidate) => {
-              const pointer = dropWorld ?? connectionDrag.current;
+      let target = targetId
+        ? elements.find((element) => element.id === targetId)
+        : null;
+      if (!target && source) {
+        const pointer = dropWorld ?? connectionDrag.current;
+        const candidates = elements.filter(
+          (element) =>
+            element.id !== source.id &&
+            isConnectableElement(element),
+        );
+        if (candidates.length === 1) {
+          target = candidates[0] ?? null;
+        }
+        const nearbyCandidate = candidates
+          .reduce<{ element: DiagramElement; distance: number } | null>(
+            (closest, candidate) => {
               const center = getElementCenter(candidate);
               const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y);
-              if (!closest) {
-                return candidate;
+              if (!closest || distance < closest.distance) {
+                return { element: candidate, distance };
               }
-              const closestCenter = getElementCenter(closest);
-              const closestDistance = Math.hypot(
-                closestCenter.x - pointer.x,
-                closestCenter.y - pointer.y,
-              );
-              return distance < closestDistance ? candidate : closest;
-            }, null)
-          : null;
-      const target = targetId
-        ? elements.find((element) => element.id === targetId)
-        : nearestCandidate;
+              return closest;
+            },
+            null,
+          );
+        if (!target && nearbyCandidate && nearbyCandidate.distance <= 500) {
+          target = nearbyCandidate.element;
+        }
+      }
 
       if (
         source &&
@@ -2512,6 +2511,45 @@ export function EditorSurface({
           },
         ]);
         setSelection(makeSelection([nextConnector.id]));
+      } else if (
+        source &&
+        source.kind !== "line" &&
+        source.kind !== "ink"
+      ) {
+        const pointer = dropWorld ?? connectionDrag.current;
+        const placeholder = assignLayerToElement(
+          createRectangle(
+            snapToGrid(pointer.x - 72),
+            snapToGrid(pointer.y - 44),
+            144,
+            88,
+          ),
+        );
+        const fromCenter = getElementCenter(source);
+        const toCenter = getElementCenter(placeholder);
+        const nextConnector = assignLayerToElement(
+          createLine(
+            Math.min(fromCenter.x, toCenter.x),
+            Math.min(fromCenter.y, toCenter.y),
+            Math.abs(toCenter.x - fromCenter.x),
+            Math.abs(toCenter.y - fromCenter.y),
+          ),
+        );
+        applyElementsWithInvariants((current) => [
+          ...current,
+          placeholder,
+          {
+            ...nextConnector,
+            connector: {
+              fromId: source.id,
+              toId: placeholder.id,
+            },
+          },
+        ]);
+        setSelection(makeSelection([placeholder.id]));
+        setPersistenceMessage(
+          "Target placeholder created. Use shape options to choose target type.",
+        );
       }
 
       setConnectionDrag(null);

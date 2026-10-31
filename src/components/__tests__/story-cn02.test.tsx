@@ -33,15 +33,20 @@ describe("STORY-CN02 drag-to-connect", () => {
     render(<EditorSurface document={baseDocument} onDocumentChange={onDocumentChange} />);
 
     const canvas = screen.getByLabelText("Diagram canvas");
-    fireEvent.mouseMove(canvas, { clientX: 180, clientY: 160 });
+    const canvasRect = canvas.getBoundingClientRect();
+    const toClient = (x: number, y: number) => ({
+      clientX: canvasRect.left + x,
+      clientY: canvasRect.top + y,
+    });
+    fireEvent.mouseMove(canvas, toClient(180, 160));
 
     const rightPort = screen.getByLabelText("Connection port right");
-    fireEvent.pointerDown(rightPort, { button: 0, clientX: 260, clientY: 165 });
-    fireEvent.pointerMove(canvas, { clientX: 460, clientY: 165 });
+    fireEvent.pointerDown(rightPort, { button: 0, ...toClient(260, 165) });
+    fireEvent.pointerMove(canvas, toClient(490, 165));
 
     expect(screen.getByLabelText("Connector preview")).toBeInTheDocument();
 
-    fireEvent.pointerUp(canvas, { clientX: 460, clientY: 165 });
+    fireEvent.pointerUp(canvas, toClient(490, 165));
 
     let connector:
       | {
@@ -60,10 +65,10 @@ describe("STORY-CN02 drag-to-connect", () => {
     });
     expect(connector?.connector).toEqual({ fromId: sourceId, toId: targetId });
 
-    const targetShape = screen.getAllByLabelText("Shape rect")[1];
-    fireEvent.pointerDown(targetShape, { button: 0, clientX: 460, clientY: 165 });
-    fireEvent.pointerMove(canvas, { clientX: 560, clientY: 165 });
-    fireEvent.pointerUp(canvas, { clientX: 560, clientY: 165 });
+    const targetShape = screen.getAllByLabelText(/rect shape:/i)[1];
+    fireEvent.pointerDown(targetShape, { button: 0, ...toClient(490, 165) });
+    fireEvent.pointerMove(canvas, toClient(590, 165));
+    fireEvent.pointerUp(canvas, toClient(590, 165));
 
     await waitFor(() => {
       const latestAfterMove =
