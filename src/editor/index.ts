@@ -86,6 +86,7 @@ export {
 export { exportSvg } from "./export/svg";
 export { exportPng } from "./export/png";
 export { exportPdf, resolvePdfExportDimensions } from "./export/pdf";
+export { exportDrawIo } from "./export/drawio";
 export {
   exportPngHeadless,
   exportSvgHeadless,

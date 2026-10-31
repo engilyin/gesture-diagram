@@ -12,6 +12,7 @@ describe("STORY-IE02 PDF export control", () => {
         onExportSvg={vi.fn()}
         onExportPng={vi.fn()}
         onExportPdf={onExportPdf}
+        onExportDrawIo={vi.fn()}
         onImport={vi.fn(async () => undefined)}
       />,
     );
