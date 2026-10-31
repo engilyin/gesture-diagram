@@ -63,6 +63,10 @@ interface ContextPaletteProps {
   onConvertKind?: (kind: DiagramElement["kind"]) => void;
   onSelectColor?: (color: string) => void;
   onSelectStyleVariant?: (style: PaletteStyleVariant) => void;
+  selectedTextAlignHorizontal?: "left" | "center" | "right";
+  selectedTextAlignVertical?: "top" | "middle" | "bottom";
+  onSelectTextAlignHorizontal?: (value: "left" | "center" | "right") => void;
+  onSelectTextAlignVertical?: (value: "top" | "middle" | "bottom") => void;
 }
 
 export function ContextPalette({
@@ -77,6 +81,10 @@ export function ContextPalette({
   onConvertKind,
   onSelectColor,
   onSelectStyleVariant,
+  selectedTextAlignHorizontal,
+  selectedTextAlignVertical,
+  onSelectTextAlignHorizontal,
+  onSelectTextAlignVertical,
 }: ContextPaletteProps) {
   const profile = profileId ? getProfile(profileId) : null;
   const priorityByKind = new Map<string, number>(
@@ -146,6 +154,39 @@ export function ContextPalette({
               {style}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {onSelectTextAlignHorizontal || onSelectTextAlignVertical ? (
+        <div className="context-palette-section">
+          {onSelectTextAlignHorizontal
+            ? (["left", "center", "right"] as const).map((align) => (
+                <button
+                  key={`text-h-${align}`}
+                  type="button"
+                  className="context-palette-style-button"
+                  aria-label={`Set text horizontal ${align}`}
+                  aria-pressed={selectedTextAlignHorizontal === align}
+                  onClick={() => onSelectTextAlignHorizontal(align)}
+                >
+                  H:{align}
+                </button>
+              ))
+            : null}
+          {onSelectTextAlignVertical
+            ? (["top", "middle", "bottom"] as const).map((align) => (
+                <button
+                  key={`text-v-${align}`}
+                  type="button"
+                  className="context-palette-style-button"
+                  aria-label={`Set text vertical ${align}`}
+                  aria-pressed={selectedTextAlignVertical === align}
+                  onClick={() => onSelectTextAlignVertical(align)}
+                >
+                  V:{align}
+                </button>
+              ))
+            : null}
         </div>
       ) : null}
 

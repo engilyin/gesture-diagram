@@ -331,6 +331,24 @@ function supportsInlineTextEditing(element: DiagramElement): boolean {
   return element.kind !== "line" && element.kind !== "ink";
 }
 
+type TextAlignHorizontal = "left" | "center" | "right";
+type TextAlignVertical = "top" | "middle" | "bottom";
+
+function resolveTextAlignmentFromClick(
+  element: DiagramElement,
+  point: Point,
+): { horizontal: TextAlignHorizontal; vertical: TextAlignVertical } {
+  const relativeX = (point.x - element.x) / Math.max(element.width, 1);
+  const relativeY = (point.y - element.y) / Math.max(element.height, 1);
+
+  const horizontal: TextAlignHorizontal =
+    relativeX <= 0.33 ? "left" : relativeX >= 0.67 ? "right" : "center";
+  const vertical: TextAlignVertical =
+    relativeY <= 0.33 ? "top" : relativeY >= 0.67 ? "bottom" : "middle";
+
+  return { horizontal, vertical };
+}
+
 function createDefaultLayer(): EditorLayer {
   return {
     id: crypto.randomUUID(),
@@ -1535,9 +1553,41 @@ export function EditorSurface({
     [readOnly, selectedElement, updateSelectedElement],
   );
 
+  const handleSelectTextAlignHorizontal = useCallback(
+    (textAlignHorizontal: TextAlignHorizontal) => {
+      if (readOnly || !selectedElement || !supportsInlineTextEditing(selectedElement)) {
+        return;
+      }
+      updateSelectedElement((element) => ({
+        ...element,
+        textAlignHorizontal,
+      }));
+    },
+    [readOnly, selectedElement, updateSelectedElement],
+  );
+
+  const handleSelectTextAlignVertical = useCallback(
+    (textAlignVertical: TextAlignVertical) => {
+      if (readOnly || !selectedElement || !supportsInlineTextEditing(selectedElement)) {
+        return;
+      }
+      updateSelectedElement((element) => ({
+        ...element,
+        textAlignVertical,
+      }));
+    },
+    [readOnly, selectedElement, updateSelectedElement],
+  );
+
   const selectedStyleVariant: PaletteStyleVariant | null = selectedElement
     ? selectedElement.styleVariant ?? getDefaultStyleVariant(selectedElement.kind)
     : null;
+  const selectedTextAlignHorizontal: TextAlignHorizontal | undefined = selectedElement
+    ? selectedElement.textAlignHorizontal ?? "center"
+    : undefined;
+  const selectedTextAlignVertical: TextAlignVertical | undefined = selectedElement
+    ? selectedElement.textAlignVertical ?? "middle"
+    : undefined;
 
   const shouldShowShapeCustomizer =
     !readOnly &&
@@ -1930,7 +1980,7 @@ export function EditorSurface({
       targetElementId !== undefined
         ? elements.find((element) => element.id === targetElementId) ?? null
         : null;
-    const hitElement = hitTestElement(world);
+    const hitElement = hitTestElement(world) ?? directTarget;
 
     if (
       directTarget &&
@@ -2012,6 +2062,20 @@ export function EditorSurface({
       const nextSelection = hitElement.groupId
         ? getGroupedSelectionIds(elements, [hitElement.id])
         : [hitElement.id];
+      if (supportsInlineTextEditing(hitElement)) {
+        const nextAlignment = resolveTextAlignmentFromClick(hitElement, world);
+        applyElementsWithInvariants((current) =>
+          current.map((element) =>
+            element.id === hitElement.id
+              ? {
+                  ...element,
+                  textAlignHorizontal: nextAlignment.horizontal,
+                  textAlignVertical: nextAlignment.vertical,
+                }
+              : element,
+          ),
+        );
+      }
       setSelection(makeSelection(nextSelection));
       setStroke([]);
       setStrokeGhost(null);
@@ -3926,6 +3990,18 @@ export function EditorSurface({
             onSelectStyleVariant={
               shouldShowShapeCustomizer ? handleSelectStyleVariant : undefined
             }
+            selectedTextAlignHorizontal={
+              shouldShowShapeCustomizer ? selectedTextAlignHorizontal : undefined
+            }
+            selectedTextAlignVertical={
+              shouldShowShapeCustomizer ? selectedTextAlignVertical : undefined
+            }
+            onSelectTextAlignHorizontal={
+              shouldShowShapeCustomizer ? handleSelectTextAlignHorizontal : undefined
+            }
+            onSelectTextAlignVertical={
+              shouldShowShapeCustomizer ? handleSelectTextAlignVertical : undefined
+            }
           />
         )}
 
@@ -4153,6 +4229,20 @@ export function EditorSurface({
               );
             }
 
+            const textAlignHorizontal = element.textAlignHorizontal ?? "center";
+            const textAlignVertical = element.textAlignVertical ?? "middle";
+            const justifyContent =
+              textAlignHorizontal === "left"
+                ? "flex-start"
+                : textAlignHorizontal === "right"
+                  ? "flex-end"
+                  : "center";
+            const alignItems =
+              textAlignVertical === "top"
+                ? "flex-start"
+                : textAlignVertical === "bottom"
+                  ? "flex-end"
+                  : "center";
             const centeredLabelStyle: CSSProperties = {
               position: "absolute",
               inset: 0,
@@ -4160,12 +4250,12 @@ export function EditorSurface({
               color: baseColor,
               fontSize: "14px",
               lineHeight: "18px",
-              textAlign: "center",
+              textAlign: textAlignHorizontal,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              alignItems,
+              justifyContent,
               pointerEvents: "none",
               userSelect: "none",
               boxSizing: "border-box",
@@ -4292,11 +4382,11 @@ export function EditorSurface({
                       boxSizing: "border-box",
                       userSelect: "none",
                       whiteSpace: "pre-wrap",
-                      textAlign: "center",
+                      textAlign: textAlignHorizontal,
                       wordBreak: "break-word",
                       display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
+                      alignItems,
+                      justifyContent,
                     }}
                   >
                     {element.text && element.text.length > 0
