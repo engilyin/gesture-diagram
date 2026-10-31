@@ -38,6 +38,7 @@ import {
 import {
   autoSizeContainers,
   COLLAPSED_CONTAINER_HEIGHT,
+  CONTAINER_PADDING,
   collectOwnedDescendantIds,
   getGroupedSelectionIds,
   groupElements,
@@ -372,7 +373,11 @@ export function EditorSurface({
   const clipboardRef = useRef<DiagramElement[] | null>(null);
   const pasteSequenceRef = useRef(0);
   const draggedLayerIdRef = useRef<string | null>(null);
+  const draggedOutlineElementIdRef = useRef<string | null>(null);
   const resizeTargetIdRef = useRef<string | null>(null);
+  const [outlineFilter, setOutlineFilter] = useState("");
+  const [collapsedOutlineLayers, setCollapsedOutlineLayers] = useState<string[]>([]);
+  const [collapsedOutlineGroups, setCollapsedOutlineGroups] = useState<string[]>([]);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -502,7 +507,7 @@ export function EditorSurface({
   const renderableElements = useMemo(() => {
     const layerVisibleElements = elements.filter((element) => {
       const layerIndex = element.layer ?? 0;
-      return layerByIndex.get(layerIndex)?.visible ?? true;
+      return (layerByIndex.get(layerIndex)?.visible ?? true) && !element.hidden;
     });
     const elementsById = new Map(
       layerVisibleElements.map((element) => [element.id, element]),
@@ -2897,6 +2902,111 @@ export function EditorSurface({
     );
   };
 
+  const handleToggleElementVisibility = (elementId: string) => {
+    applyElementsWithInvariants((current) =>
+      current.map((element) =>
+        element.id === elementId
+          ? {
+              ...element,
+              hidden: !element.hidden,
+            }
+          : element,
+      ),
+    );
+    setSelection((current) =>
+      current.ids.includes(elementId) ? makeSelection() : current,
+    );
+  };
+
+  const handleToggleElementLock = (elementId: string) => {
+    applyElementsWithInvariants((current) =>
+      current.map((element) =>
+        element.id === elementId
+          ? {
+              ...element,
+              locked: !element.locked,
+            }
+          : element,
+      ),
+    );
+  };
+
+  const reorderElementsInOutline = (fromId: string, toId: string) => {
+    if (fromId === toId) {
+      return;
+    }
+    applyElementsWithInvariants((current) => {
+      const reordered = [...current];
+      const fromIndex = reordered.findIndex((element) => element.id === fromId);
+      const toIndex = reordered.findIndex((element) => element.id === toId);
+      if (fromIndex < 0 || toIndex < 0) {
+        return current;
+      }
+      const [moved] = reordered.splice(fromIndex, 1);
+      if (!moved) {
+        return current;
+      }
+      reordered.splice(toIndex, 0, moved);
+      return reordered;
+    });
+  };
+
+  const moveElementToLayer = (elementId: string, layerIndex: number) => {
+    applyElementsWithInvariants((current) =>
+      current.map((element) =>
+        element.id === elementId
+          ? {
+              ...element,
+              layer: layerIndex,
+              groupId: undefined,
+              parentId: undefined,
+            }
+          : element,
+      ),
+    );
+  };
+
+  const assignElementToGroup = (elementId: string, groupId?: string) => {
+    applyElementsWithInvariants((current) =>
+      current.map((element) =>
+        element.id === elementId
+          ? {
+              ...element,
+              groupId,
+              parentId: undefined,
+            }
+          : element,
+      ),
+    );
+  };
+
+  const assignElementParent = (elementId: string, parentId?: string) => {
+    applyElementsWithInvariants((current) => {
+      const parent = parentId
+        ? current.find((element) => element.id === parentId && element.kind === "container")
+        : null;
+      return current.map((element) => {
+        if (element.id !== elementId) {
+          return element;
+        }
+        if (!parent) {
+          return {
+            ...element,
+            parentId,
+          };
+        }
+        const nextX = parent.x + CONTAINER_PADDING;
+        const nextY = parent.y + CONTAINER_PADDING;
+        return {
+          ...element,
+          parentId,
+          x: nextX,
+          y: nextY,
+        };
+      });
+    });
+  };
+
   const reorderLayers = (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
       return;
@@ -2978,6 +3088,64 @@ export function EditorSurface({
       }),
     );
   };
+
+  const toggleOutlineLayerCollapse = (layerId: string) => {
+    setCollapsedOutlineLayers((current) =>
+      current.includes(layerId)
+        ? current.filter((id) => id !== layerId)
+        : [...current, layerId],
+    );
+  };
+
+  const toggleOutlineGroupCollapse = (groupId: string) => {
+    setCollapsedOutlineGroups((current) =>
+      current.includes(groupId)
+        ? current.filter((id) => id !== groupId)
+        : [...current, groupId],
+    );
+  };
+
+  const outlineFilterText = outlineFilter.trim().toLowerCase();
+  const filteredOutlineElements = useMemo(() => {
+    if (!outlineFilterText) {
+      return elements;
+    }
+    return elements.filter((element) => {
+      const layerName = layers[element.layer ?? 0]?.name ?? "";
+      const text = element.text ?? "";
+      const kind = element.kind;
+      const group = element.groupId ?? "";
+      return [element.id, text, kind, group, layerName]
+        .join(" ")
+        .toLowerCase()
+        .includes(outlineFilterText);
+    });
+  }, [elements, layers, outlineFilterText]);
+
+  const outlineElementsByLayer = useMemo(() => {
+    return layers.map((_, layerIndex) => {
+      const layerElements = filteredOutlineElements.filter(
+        (element) => (element.layer ?? 0) === layerIndex,
+      );
+      const grouped = new Map<string, DiagramElement[]>();
+      const ungrouped: DiagramElement[] = [];
+
+      layerElements.forEach((element) => {
+        if (element.groupId) {
+          const entries = grouped.get(element.groupId) ?? [];
+          entries.push(element);
+          grouped.set(element.groupId, entries);
+          return;
+        }
+        ungrouped.push(element);
+      });
+
+      return {
+        grouped,
+        ungrouped,
+      };
+    });
+  }, [filteredOutlineElements, layers]);
 
   return (
     <div className="editor-shell">
@@ -3164,6 +3332,199 @@ export function EditorSurface({
                     Delete
                   </button>
                   {hasContent ? <span className="layer-count">●</span> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
+      )}
+
+      {!readOnly && (
+        <fieldset className="layer-panel" aria-label="Outline panel">
+          <legend>Outline</legend>
+          <div className="layer-panel-actions">
+            <input
+              type="search"
+              aria-label="Outline filter"
+              placeholder="Filter layers, groups, shapes"
+              value={outlineFilter}
+              onChange={(event) => setOutlineFilter(event.target.value)}
+            />
+          </div>
+          <ul className="layer-list">
+            {layers.map((layer, index) => {
+              const outlineLayer = outlineElementsByLayer[index];
+              if (!outlineLayer) {
+                return null;
+              }
+              const isCollapsed = collapsedOutlineLayers.includes(layer.id);
+              return (
+                <li key={`outline-${layer.id}`} className="layer-row">
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => {
+                      const draggedId = draggedOutlineElementIdRef.current;
+                      if (!draggedId) {
+                        return;
+                      }
+                      moveElementToLayer(draggedId, index);
+                      draggedOutlineElementIdRef.current = null;
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-label={isCollapsed ? `Expand ${layer.name}` : `Collapse ${layer.name}`}
+                      onClick={() => toggleOutlineLayerCollapse(layer.id)}
+                    >
+                      {isCollapsed ? "▸" : "▾"}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Select ${layer.name} in outline`}
+                      onClick={() => setActiveLayerId(layer.id)}
+                    >
+                      {layer.name}
+                    </button>
+                  </div>
+                  {!isCollapsed && (
+                    <ul className="layer-list" style={{ marginLeft: 18, marginTop: 6 }}>
+                      {[...outlineLayer.grouped.entries()].map(([groupId, groupElements]) => {
+                        const groupCollapsed = collapsedOutlineGroups.includes(groupId);
+                        return (
+                          <li key={`outline-group-${groupId}`} className="layer-row">
+                            <div
+                              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={() => {
+                                const draggedId = draggedOutlineElementIdRef.current;
+                                if (!draggedId) {
+                                  return;
+                                }
+                                assignElementToGroup(draggedId, groupId);
+                                draggedOutlineElementIdRef.current = null;
+                              }}
+                            >
+                              <button
+                                type="button"
+                                aria-label={groupCollapsed ? `Expand group ${groupId}` : `Collapse group ${groupId}`}
+                                onClick={() => toggleOutlineGroupCollapse(groupId)}
+                              >
+                                {groupCollapsed ? "▸" : "▾"}
+                              </button>
+                              <span>{`Group ${groupId.slice(0, 8)}`}</span>
+                            </div>
+                            {!groupCollapsed && (
+                              <ul className="layer-list" style={{ marginLeft: 18, marginTop: 6 }}>
+                                {groupElements.map((element) => (
+                                  <li
+                                    key={`outline-shape-${element.id}`}
+                                    className="layer-row"
+                                    draggable
+                                    onDragStart={() => {
+                                      draggedOutlineElementIdRef.current = element.id;
+                                    }}
+                                    onDragOver={(event) => event.preventDefault()}
+                                    onDrop={() => {
+                                      const draggedId = draggedOutlineElementIdRef.current;
+                                      if (!draggedId) {
+                                        return;
+                                      }
+                                      reorderElementsInOutline(draggedId, element.id);
+                                      draggedOutlineElementIdRef.current = null;
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      aria-label={`Select ${element.id} in outline`}
+                                      onClick={() => setSelection(makeSelection([element.id]))}
+                                    >
+                                      {`${element.kind}${element.text ? `: ${element.text}` : ""}`}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={`Toggle visibility for ${element.id}`}
+                                      onClick={() => handleToggleElementVisibility(element.id)}
+                                    >
+                                      {element.hidden ? "Show" : "Hide"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={`Toggle lock for ${element.id}`}
+                                      onClick={() => handleToggleElementLock(element.id)}
+                                    >
+                                      {element.locked ? "Unlock" : "Lock"}
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        );
+                      })}
+                      {outlineLayer.ungrouped.map((element) => (
+                        <li
+                          key={`outline-ungrouped-${element.id}`}
+                          className="layer-row"
+                          draggable
+                          onDragStart={() => {
+                            draggedOutlineElementIdRef.current = element.id;
+                          }}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => {
+                            const draggedId = draggedOutlineElementIdRef.current;
+                            if (!draggedId) {
+                              return;
+                            }
+                            reorderElementsInOutline(draggedId, element.id);
+                            draggedOutlineElementIdRef.current = null;
+                          }}
+                        >
+                          <div
+                            style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}
+                            onDragOver={(event) => {
+                              if (element.kind === "container") {
+                                event.preventDefault();
+                              }
+                            }}
+                            onDrop={() => {
+                              const draggedId = draggedOutlineElementIdRef.current;
+                              if (!draggedId || element.kind !== "container") {
+                                return;
+                              }
+                              if (draggedId === element.id) {
+                                return;
+                              }
+                              assignElementParent(draggedId, element.id);
+                              draggedOutlineElementIdRef.current = null;
+                            }}
+                          >
+                            <button
+                              type="button"
+                              aria-label={`Select ${element.id} in outline`}
+                              onClick={() => setSelection(makeSelection([element.id]))}
+                            >
+                              {`${element.kind}${element.text ? `: ${element.text}` : ""}`}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Toggle visibility for ${element.id}`}
+                              onClick={() => handleToggleElementVisibility(element.id)}
+                            >
+                              {element.hidden ? "Show" : "Hide"}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Toggle lock for ${element.id}`}
+                              onClick={() => handleToggleElementLock(element.id)}
+                            >
+                              {element.locked ? "Unlock" : "Lock"}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}

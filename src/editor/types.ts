@@ -7,6 +7,7 @@ export type DiagramElement = {
   height: number;
   text?: string;
   locked?: boolean;
+  hidden?: boolean;
   color?: string;
   strokeWidth?: number;
   styleVariant?: "filled" | "outlined" | "dashed";
