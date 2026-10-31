@@ -455,16 +455,18 @@ button {
 .connection-ports {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .connection-port {
   position: absolute;
+  padding: 0;
   border-radius: var(--gd-radius-round);
   border: 2px solid var(--gd-color-connection-port-border);
   background: var(--gd-color-connection-port-bg);
   box-shadow: 0 2px 6px var(--gd-color-connection-port-shadow);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: crosshair;
 }
 
 .editor-surface {

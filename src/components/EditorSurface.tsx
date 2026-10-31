@@ -93,6 +93,12 @@ const onboardingDismissedStorageKey = "gd-onboarding-overlay-dismissed";
 type DragMode = "draw" | "move" | "resize" | "marquee" | null;
 type HistorySnapshot = DiagramElement[];
 type MarqueeSelection = { start: Point; end: Point };
+type ConnectionDragState = {
+  fromId: string;
+  start: Point;
+  current: Point;
+  targetId: string | null;
+};
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 type ShapeChoice =
@@ -273,6 +279,9 @@ export function EditorSurface({
     useState<MarqueeSelection | null>(null);
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   const [snapGuide, setSnapGuide] = useState<SnapGuide | null>(null);
+  const [connectionDrag, setConnectionDrag] = useState<ConnectionDragState | null>(
+    null,
+  );
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [editingTextElementId, setEditingTextElementId] = useState<string | null>(
     null,
@@ -589,6 +598,25 @@ export function EditorSurface({
 
     return null;
   };
+
+  const hitTestConnectableElement = (
+    point: Point,
+    sourceId: string,
+  ): DiagramElement | null => {
+    const hit = hitTestElement(point);
+    if (!hit || hit.id === sourceId) {
+      return null;
+    }
+    if (hit.kind === "line" || hit.kind === "ink") {
+      return null;
+    }
+    return hit;
+  };
+
+  const getElementCenter = (element: DiagramElement): Point => ({
+    x: element.x + element.width / 2,
+    y: element.y + element.height / 2,
+  });
 
   const updateSelectedElement = (updater: (element: DiagramElement) => DiagramElement) => {
     if (!selectedId) {
@@ -1143,6 +1171,27 @@ export function EditorSurface({
     }
   };
 
+  const handlePortPointerDown = (
+    port: { absoluteX: number; absoluteY: number },
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (readOnly || !portSourceElement || isElementInteractionLocked(portSourceElement)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setSelection(makeSelection([portSourceElement.id]));
+    setConnectionDrag({
+      fromId: portSourceElement.id,
+      start: { x: port.absoluteX, y: port.absoluteY },
+      current: { x: port.absoluteX, y: port.absoluteY },
+      targetId: null,
+    });
+    setDragMode(null);
+    setStroke([]);
+    setSnapGuide(null);
+  };
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (readOnly) {
       return;
@@ -1217,6 +1266,20 @@ export function EditorSurface({
         ? hovered.id
         : null,
     );
+
+    if (connectionDrag) {
+      const target = hitTestConnectableElement(world, connectionDrag.fromId);
+      setConnectionDrag((current) =>
+        current
+          ? {
+              ...current,
+              current: world,
+              targetId: target?.id ?? null,
+            }
+          : current,
+      );
+      return;
+    }
 
     if (isPanning && dragStartRef.current) {
       const dx = local.x - dragStartRef.current.x;
@@ -1365,8 +1428,87 @@ export function EditorSurface({
     );
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (event?: ReactPointerEvent<HTMLDivElement>) => {
     if (readOnly) {
+      return;
+    }
+
+    if (connectionDrag) {
+      const source = elements.find((element) => element.id === connectionDrag.fromId);
+      const dropWorld = event ? screenToWorld(getLocalPoint(event)) : null;
+      const fallbackTarget = dropWorld
+        ? hitTestConnectableElement(dropWorld, connectionDrag.fromId)
+        : null;
+      const targetId = connectionDrag.targetId ?? fallbackTarget?.id ?? null;
+      const draggedDistance = Math.hypot(
+        connectionDrag.current.x - connectionDrag.start.x,
+        connectionDrag.current.y - connectionDrag.start.y,
+      );
+      const connectableCandidates = elements.filter(
+        (element) =>
+          element.id !== connectionDrag.fromId &&
+          element.kind !== "line" &&
+          element.kind !== "ink",
+      );
+      const nearestCandidate =
+        draggedDistance >= 8 && connectableCandidates.length > 0
+          ? connectableCandidates.reduce<DiagramElement | null>((closest, candidate) => {
+              const pointer = dropWorld ?? connectionDrag.current;
+              const center = getElementCenter(candidate);
+              const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y);
+              if (!closest) {
+                return candidate;
+              }
+              const closestCenter = getElementCenter(closest);
+              const closestDistance = Math.hypot(
+                closestCenter.x - pointer.x,
+                closestCenter.y - pointer.y,
+              );
+              return distance < closestDistance ? candidate : closest;
+            }, null)
+          : null;
+      const target = targetId
+        ? elements.find((element) => element.id === targetId)
+        : nearestCandidate;
+
+      if (
+        source &&
+        target &&
+        source.id !== target.id &&
+        source.kind !== "line" &&
+        source.kind !== "ink" &&
+        target.kind !== "line" &&
+        target.kind !== "ink"
+      ) {
+        const fromCenter = getElementCenter(source);
+        const toCenter = getElementCenter(target);
+        const nextConnector = assignLayerToElement(
+          createLine(
+            Math.min(fromCenter.x, toCenter.x),
+            Math.min(fromCenter.y, toCenter.y),
+            Math.abs(toCenter.x - fromCenter.x),
+            Math.abs(toCenter.y - fromCenter.y),
+          ),
+        );
+        applyElementsWithInvariants((current) => [
+          ...current,
+          {
+            ...nextConnector,
+            connector: {
+              fromId: source.id,
+              toId: target.id,
+            },
+          },
+        ]);
+        setSelection(makeSelection([nextConnector.id]));
+      }
+
+      setConnectionDrag(null);
+      setHoveredElementId(null);
+      setDragMode(null);
+      setSnapGuide(null);
+      dragStartRef.current = null;
+      lastPointerWorldRef.current = null;
       return;
     }
 
@@ -2345,7 +2487,10 @@ export function EditorSurface({
           }}
         >
           <div className="grid" aria-hidden="true" />
-          <ConnectionPorts ports={hoveredPorts} />
+          <ConnectionPorts
+            ports={hoveredPorts}
+            onPortPointerDown={handlePortPointerDown}
+          />
           {marqueeSelection && (
             <div
               aria-label="Selection marquee"
@@ -2386,20 +2531,47 @@ export function EditorSurface({
               }}
             />
           )}
+          {connectionDrag && (
+            <svg
+              aria-label="Connector preview"
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: `${canvasWidth}px`,
+                height: `${canvasHeight}px`,
+                pointerEvents: "none",
+                overflow: "visible",
+              }}
+            >
+              <line
+                x1={connectionDrag.start.x}
+                y1={connectionDrag.start.y}
+                x2={connectionDrag.current.x}
+                y2={connectionDrag.current.y}
+                stroke="var(--gd-color-connection-port-bg)"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+              />
+            </svg>
+          )}
           {visibleElements.map((element) => {
             const isSelected = selection.ids.includes(element.id);
+            const isConnectionTarget = connectionDrag?.targetId === element.id;
             const strokeWidth = element.strokeWidth ?? 2;
             const baseColor = element.color ?? "var(--gd-element-stroke, #1f2937)";
             const selectedColor = "var(--gd-color-selection-handle-border)";
+            const borderColor = isConnectionTarget
+              ? "var(--gd-color-connection-port-bg)"
+              : isSelected
+                ? selectedColor
+                : baseColor;
             const style: CSSProperties = {
               position: "absolute",
               left: element.x,
               top: element.y,
               width: element.width,
               height: element.height,
-              border: isSelected
-                ? `${strokeWidth}px solid ${selectedColor}`
-                : `${strokeWidth}px solid ${baseColor}`,
+              border: `${strokeWidth}px solid ${borderColor}`,
               background:
                 element.kind === "rect"
                   ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
@@ -2425,7 +2597,7 @@ export function EditorSurface({
                       width: "100%",
                       height: "100%",
                       borderTop: `${strokeWidth}px solid ${
-                        isSelected ? selectedColor : baseColor
+                        borderColor
                       }`,
                       borderLeft: "0",
                       borderRight: "0",
@@ -2456,7 +2628,7 @@ export function EditorSurface({
                       .map((point) => `${point.x},${point.y}`)
                       .join(" ")}
                     fill="none"
-                    stroke={isSelected ? selectedColor : baseColor}
+                    stroke={borderColor}
                     strokeWidth={isSelected ? strokeWidth + 1 : strokeWidth}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -2510,7 +2682,7 @@ export function EditorSurface({
                     <polygon
                       points={`${element.width / 2},0 ${element.width},${element.height / 2} ${element.width / 2},${element.height} 0,${element.height / 2}`}
                       fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
-                      stroke={isSelected ? selectedColor : baseColor}
+                      stroke={borderColor}
                       strokeWidth={strokeWidth}
                     />
                   </svg>
@@ -2548,7 +2720,7 @@ export function EditorSurface({
                     <polygon
                       points={`${element.width / 2},0 ${element.width},${element.height} 0,${element.height}`}
                       fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
-                      stroke={isSelected ? selectedColor : baseColor}
+                      stroke={borderColor}
                       strokeWidth={strokeWidth}
                     />
                   </svg>
@@ -2571,7 +2743,7 @@ export function EditorSurface({
                     style={{
                       width: "100%",
                       height: "100%",
-                      border: `1px dashed ${isSelected ? selectedColor : baseColor}`,
+                      border: `1px dashed ${borderColor}`,
                       padding: "6px 8px",
                       color: baseColor,
                       fontSize: "14px",
@@ -2603,7 +2775,7 @@ export function EditorSurface({
                   style={{
                     ...style,
                     borderStyle: "dashed",
-                    borderColor: isSelected ? selectedColor : baseColor,
+                    borderColor,
                     background: "rgba(148, 163, 184, 0.08)",
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
