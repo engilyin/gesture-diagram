@@ -32,6 +32,7 @@ export function ConnectionPorts({ ports, onPortPointerDown }: ConnectionPortsPro
             height: targetSize,
             minWidth: targetSize,
             minHeight: targetSize,
+            cursor: "crosshair",
           }}
         />
       ))}

@@ -21,6 +21,7 @@ function isValidElement(input: unknown): input is DiagramElement {
     typeof candidate.y === 'number' &&
     typeof candidate.width === 'number' &&
     typeof candidate.height === 'number' &&
+    (candidate.rotation == null || typeof candidate.rotation === "number") &&
     (candidate.locked == null || typeof candidate.locked === "boolean") &&
     (candidate.parentId == null || typeof candidate.parentId === "string")
   );
