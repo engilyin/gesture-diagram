@@ -88,6 +88,7 @@ const fitPadding = 48;
 const defaultDocumentTitle = "Untitled diagram";
 const defaultCanvasBackground = "#ffffff";
 const defaultLayerColor = "#4f46e5";
+const onboardingDismissedStorageKey = "gd-onboarding-overlay-dismissed";
 
 type DragMode = "draw" | "move" | "resize" | "marquee" | null;
 type HistorySnapshot = DiagramElement[];
@@ -272,6 +273,7 @@ export function EditorSurface({
     useState<MarqueeSelection | null>(null);
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   const [snapGuide, setSnapGuide] = useState<SnapGuide | null>(null);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [editingTextElementId, setEditingTextElementId] = useState<string | null>(
     null,
   );
@@ -459,6 +461,17 @@ export function EditorSurface({
     observer.observe(surfaceRef.current);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (readOnly) {
+      setIsOnboardingOpen(false);
+      return;
+    }
+    const dismissed =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem(onboardingDismissedStorageKey) === "1";
+    setIsOnboardingOpen(!dismissed);
+  }, [readOnly]);
 
   useEffect(() => {
     if (!hasSelection(selection)) {
@@ -1834,6 +1847,30 @@ export function EditorSurface({
     readOnly,
   ]);
 
+  useEffect(() => {
+    if (!isOnboardingOpen) {
+      return;
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setIsOnboardingOpen(false);
+      window.localStorage.setItem(onboardingDismissedStorageKey, "1");
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isOnboardingOpen]);
+
+  const handleOpenOnboarding = () => {
+    setIsOnboardingOpen(true);
+  };
+
+  const handleCloseOnboarding = () => {
+    setIsOnboardingOpen(false);
+    window.localStorage.setItem(onboardingDismissedStorageKey, "1");
+  };
+
   const handleTitleChange = (value: string) => {
     setDocumentSettings((current) => ({
       ...current,
@@ -2017,10 +2054,55 @@ export function EditorSurface({
         <button type="button" onClick={performRedo} disabled={!canRedo}>
           Redo
         </button>
+        {!readOnly && (
+          <button type="button" onClick={handleOpenOnboarding}>
+            Cheat Sheet
+          </button>
+        )}
         <span aria-live="polite">
           Zoom: {summary.scale.toFixed(2)} | Selected: {summary.selected}
         </span>
       </div>
+      {!readOnly && isOnboardingOpen && (
+        <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Editor onboarding">
+          <div className="onboarding-panel">
+            <h2>Getting started</h2>
+            <p>Use gestures, shortcuts, and context tools to build diagrams quickly.</p>
+            <div className="onboarding-sections">
+              <section>
+                <h3>Gestures</h3>
+                <ul>
+                  <li>Draw on the canvas to recognize a shape.</li>
+                  <li>Tap empty space to create a text box.</li>
+                  <li>Drag from shape to move it; hold Alt to disable snapping.</li>
+                </ul>
+              </section>
+              <section>
+                <h3>Keyboard</h3>
+                <ul>
+                  <li>Ctrl/Cmd + C/X/V: copy, cut, paste</li>
+                  <li>Ctrl/Cmd + D: duplicate selection</li>
+                  <li>Ctrl/Cmd + Z / Shift+Z: undo/redo</li>
+                  <li>Arrow keys: nudge selected shape (Shift for larger step)</li>
+                </ul>
+              </section>
+              <section>
+                <h3>Interaction patterns</h3>
+                <ul>
+                  <li>Double-click any shape to edit its label inline.</li>
+                  <li>Use the context palette for convert, style, lock, and delete actions.</li>
+                  <li>Use layer panel controls to organize visibility and locking.</li>
+                </ul>
+              </section>
+            </div>
+            <div className="onboarding-actions">
+              <button type="button" onClick={handleCloseOnboarding}>
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {!readOnly && (
         <fieldset className="document-settings-panel" aria-label="Document settings">
           <legend>Document settings</legend>
