@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -50,6 +51,11 @@ import {
 } from "../editor/grouping";
 import { normalizeStroke } from "../editor/input";
 import { applyAutoLayout, type AutoLayoutAlgorithm } from "../editor/layout";
+import {
+  builtInLibraryShapes,
+  findLibraryShapeById,
+  getBuiltInLibraryCategories,
+} from "../editor/library";
 import {
   loadFromBrowserStorage,
   saveToBrowserStorage,
@@ -196,6 +202,54 @@ function createShapeFromStroke(kind: ShapeChoice, strokePoints: Point[]): Diagra
     return createText(bounds.minX, bounds.minY, width, height);
   }
   return createRectangle(bounds.minX, bounds.minY, width, height);
+}
+
+function createShapeFromLibrary(
+  shapeId: string,
+  x: number,
+  y: number,
+): DiagramElement | null {
+  const definition = findLibraryShapeById(shapeId);
+  if (!definition) {
+    return null;
+  }
+
+  const left = x - definition.width / 2;
+  const top = y - definition.height / 2;
+  if (definition.kind === "ellipse") {
+    return {
+      ...createEllipse(left, top, definition.width, definition.height),
+      text: definition.name,
+    };
+  }
+  if (definition.kind === "diamond") {
+    return {
+      ...createDiamond(left, top, definition.width, definition.height),
+      text: definition.name,
+    };
+  }
+  if (definition.kind === "triangle") {
+    return {
+      ...createTriangle(left, top, definition.width, definition.height),
+      text: definition.name,
+    };
+  }
+  if (definition.kind === "container") {
+    return {
+      ...createContainer(left, top, definition.width, definition.height),
+      text: definition.name,
+    };
+  }
+  if (definition.kind === "text") {
+    return {
+      ...createText(left, top, definition.width, definition.height),
+      text: definition.name,
+    };
+  }
+  return {
+    ...createRectangle(left, top, definition.width, definition.height),
+    text: definition.name,
+  };
 }
 
 function isHorizontalScribbleStroke(points: Point[]): boolean {
@@ -381,6 +435,7 @@ export function EditorSurface({
   const [collapsedOutlineLayers, setCollapsedOutlineLayers] = useState<string[]>([]);
   const [collapsedOutlineGroups, setCollapsedOutlineGroups] = useState<string[]>([]);
   const [isLayoutDialogOpen, setIsLayoutDialogOpen] = useState(false);
+  const [libraryFilter, setLibraryFilter] = useState("");
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -3174,11 +3229,60 @@ export function EditorSurface({
     });
   }, [filteredOutlineElements, layers]);
 
+  const libraryFilterText = libraryFilter.trim().toLowerCase();
+  const libraryShapesByCategory = useMemo(() => {
+    return getBuiltInLibraryCategories().map((category) => {
+      const shapes = builtInLibraryShapes.filter((shape) => {
+        if (shape.category !== category) {
+          return false;
+        }
+        if (!libraryFilterText) {
+          return true;
+        }
+        return `${shape.id} ${shape.name}`.toLowerCase().includes(libraryFilterText);
+      });
+      return { category, shapes };
+    });
+  }, [libraryFilterText]);
+
   const handleApplyAutoLayout = (algorithm: AutoLayoutAlgorithm) => {
     applyElementsWithInvariants((current) =>
       applyAutoLayout(current, algorithm, selection.ids),
     );
     setIsLayoutDialogOpen(false);
+  };
+
+  const handleLibraryDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (readOnly) {
+      return;
+    }
+    const shapeId =
+      event.dataTransfer.getData("application/x-gd-library-shape") ||
+      event.dataTransfer.getData("text/plain");
+    if (!shapeId) {
+      return;
+    }
+    const localPoint = {
+      x:
+        (Number.isFinite(event.clientX)
+          ? event.clientX
+          : event.currentTarget.getBoundingClientRect().left) -
+        event.currentTarget.getBoundingClientRect().left,
+      y:
+        (Number.isFinite(event.clientY)
+          ? event.clientY
+          : event.currentTarget.getBoundingClientRect().top) -
+        event.currentTarget.getBoundingClientRect().top,
+    };
+    const world = screenToWorld(localPoint);
+    const shape = createShapeFromLibrary(shapeId, world.x, world.y);
+    if (!shape) {
+      return;
+    }
+    const prepared = assignLayerToElement(shape);
+    applyElementsWithInvariants((current) => [...current, prepared]);
+    setSelection(makeSelection([prepared.id]));
   };
 
   return (
@@ -3597,6 +3701,58 @@ export function EditorSurface({
       )}
 
       {!readOnly && (
+        <fieldset className="layer-panel" aria-label="Library panel">
+          <legend>Library</legend>
+          <div className="layer-panel-actions">
+            <input
+              type="search"
+              aria-label="Library filter"
+              placeholder="Filter shapes"
+              value={libraryFilter}
+              onChange={(event) => setLibraryFilter(event.target.value)}
+            />
+          </div>
+          <ul className="layer-list">
+            {libraryShapesByCategory.map((entry) => (
+              <li key={`library-${entry.category}`} className="layer-row">
+                <strong>{entry.category}</strong>
+                <ul className="layer-list" style={{ marginLeft: 12, marginTop: 6 }}>
+                  {entry.shapes.map((shape) => (
+                    <li key={shape.id} className="layer-row">
+                      <button
+                        type="button"
+                        draggable
+                        aria-label={`Library shape ${shape.name}`}
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("application/x-gd-library-shape", shape.id);
+                          event.dataTransfer.setData("text/plain", shape.id);
+                        }}
+                        onClick={() => {
+                          const center = {
+                            x: -view.x / view.scale + surfaceSize.width / (2 * view.scale),
+                            y: -view.y / view.scale + surfaceSize.height / (2 * view.scale),
+                          };
+                          const created = createShapeFromLibrary(shape.id, center.x, center.y);
+                          if (!created) {
+                            return;
+                          }
+                          const prepared = assignLayerToElement(created);
+                          applyElementsWithInvariants((current) => [...current, prepared]);
+                          setSelection(makeSelection([prepared.id]));
+                        }}
+                      >
+                        {shape.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
+
+      {!readOnly && (
         <DocumentPersistenceControls
           onSave={handleSave}
           onLoad={handleLoad}
@@ -3641,6 +3797,15 @@ export function EditorSurface({
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoveredElementId(null)}
         onWheel={handleWheel}
+        onDragOver={(event) => {
+          if (
+            event.dataTransfer.types.includes("application/x-gd-library-shape") ||
+            event.dataTransfer.types.includes("text/plain")
+          ) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={handleLibraryDrop}
       >
         {selectedActions.length > 0 && (
           <ContextPalette

@@ -80,6 +80,11 @@ export {
 export { importDrawIo } from "./import/drawio";
 export { importMermaid } from "./import/mermaid";
 export {
+  builtInLibraryShapes,
+  findLibraryShapeById,
+  getBuiltInLibraryCategories,
+} from "./library";
+export {
   collectExportFidelity,
   type ExportFidelityReport,
 } from "./export/fidelity";
