@@ -256,7 +256,10 @@ button {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  grid-template-columns:
+    var(--gd-left-sidebar-width, 0px)
+    minmax(0, 1fr)
+    var(--gd-right-sidebar-width, 0px);
   gap: 8px;
 }
 

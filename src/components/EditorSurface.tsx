@@ -536,6 +536,9 @@ export function EditorSurface({
   const [isToolbarMenuOpen, setIsToolbarMenuOpen] = useState(false);
   const [libraryFilter, setLibraryFilter] = useState("");
   const [soloLayerId, setSoloLayerId] = useState<string | null>(null);
+  const [showLeftSidebar, setShowLeftSidebar] = useState(false);
+  const [showRightSidebar, setShowRightSidebar] = useState(false);
+  const [showFileControls, setShowFileControls] = useState(false);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -1071,15 +1074,6 @@ export function EditorSurface({
   });
 
   const getLocalPoint = (event: ReactPointerEvent<HTMLElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const left = Number.isFinite(rect.left) ? rect.left : 0;
-    const top = Number.isFinite(rect.top) ? rect.top : 0;
-    const clientX = Number.isFinite(event.clientX) ? event.clientX : left;
-    const clientY = Number.isFinite(event.clientY) ? event.clientY : top;
-    return { x: clientX - left, y: clientY - top };
-  };
-
-  const getLocalPointFromMouse = (event: ReactMouseEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const left = Number.isFinite(rect.left) ? rect.left : 0;
     const top = Number.isFinite(rect.top) ? rect.top : 0;
@@ -2347,11 +2341,15 @@ export function EditorSurface({
 
     const local = getLocalPoint(event);
     const world = screenToWorld(local);
-    const hovered = hitTestElement(world);
-    setHoveredElementId(
+    const shouldResolveHover =
+      dragMode === null && !isPanning && !connectionDrag && !isMinimapDragging;
+    const hovered = shouldResolveHover ? hitTestElement(world) : null;
+    const nextHoveredId =
       hovered && hovered.kind !== "line" && hovered.kind !== "ink"
         ? hovered.id
-        : null,
+        : null;
+    setHoveredElementId((current) =>
+      current === nextHoveredId ? current : nextHoveredId,
     );
 
     if (connectionDrag) {
@@ -2535,20 +2533,6 @@ export function EditorSurface({
       setStroke(nextStroke);
       setStrokeGhost(buildStrokeGhost(nextStroke));
     }
-  };
-
-  const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (readOnly) {
-      return;
-    }
-    const local = getLocalPointFromMouse(event);
-    const world = screenToWorld(local);
-    const hovered = hitTestElement(world);
-    setHoveredElementId(
-      hovered && hovered.kind !== "line" && hovered.kind !== "ink"
-        ? hovered.id
-        : null,
-    );
   };
 
   const handlePointerUp = (event?: ReactPointerEvent<HTMLDivElement>) => {
@@ -3972,6 +3956,31 @@ export function EditorSurface({
         <button type="button" onClick={performRedo} disabled={!canRedo}>
           Redo
         </button>
+        {!readOnly && (
+          <>
+            <button
+              type="button"
+              aria-pressed={showLeftSidebar}
+              onClick={() => setShowLeftSidebar((current) => !current)}
+            >
+              Layers ({layers.filter((layer) => layer.visible).length}/{layers.length})
+            </button>
+            <button
+              type="button"
+              aria-pressed={showRightSidebar}
+              onClick={() => setShowRightSidebar((current) => !current)}
+            >
+              Properties
+            </button>
+            <button
+              type="button"
+              aria-pressed={showFileControls}
+              onClick={() => setShowFileControls((current) => !current)}
+            >
+              File
+            </button>
+          </>
+        )}
         <div className="toolbar-overflow">
           <button
             type="button"
@@ -4090,8 +4099,18 @@ export function EditorSurface({
         </div>
       )}
 
-      <div className="editor-workbench">
-      {!readOnly && (
+      <div
+        className="editor-workbench"
+        style={
+          {
+            "--gd-left-sidebar-width":
+              !readOnly && showLeftSidebar ? "300px" : "0px",
+            "--gd-right-sidebar-width":
+              !readOnly && showRightSidebar ? "300px" : "0px",
+          } as CSSProperties
+        }
+      >
+      {!readOnly && showRightSidebar && (
         <aside className="editor-sidebar editor-sidebar-right" aria-label="Properties panel">
           <fieldset className="document-settings-panel" aria-label="Document settings">
             <legend>Document settings</legend>
@@ -4192,7 +4211,7 @@ export function EditorSurface({
         </aside>
       )}
 
-      {!readOnly && (
+      {!readOnly && showLeftSidebar && (
         <aside className="editor-sidebar editor-sidebar-left" aria-label="Left sidebar">
         <fieldset className="layer-panel" aria-label="Layer panel">
           <legend>Layers</legend>
@@ -4518,7 +4537,7 @@ export function EditorSurface({
       )}
 
       <div className="editor-canvas-panel">
-      {!readOnly && (
+      {!readOnly && showFileControls && (
         <DocumentPersistenceControls
           onSave={handleSave}
           onLoad={handleLoad}
@@ -4563,8 +4582,9 @@ export function EditorSurface({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setHoveredElementId(null)}
+        onMouseLeave={() =>
+          setHoveredElementId((current) => (current === null ? current : null))
+        }
         onWheel={handleWheel}
         onDragOver={(event) => {
           if (

@@ -4,13 +4,18 @@ import { readFileSync } from "node:fs";
 import { EditorSurface } from "../EditorSurface";
 
 describe("STORY-QA04 editor visual layout", () => {
-  it("renders three-panel layout and toolbar overflow actions", () => {
+  it("renders clean canvas-first layout with optional panels and toolbar overflow actions", () => {
     window.localStorage.setItem("gd-onboarding-overlay-dismissed", "1");
     render(<EditorSurface />);
 
-    expect(screen.getByLabelText("Left sidebar")).toBeInTheDocument();
-    expect(screen.getByLabelText("Properties panel")).toBeInTheDocument();
     expect(screen.getByLabelText("Diagram canvas")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Left sidebar")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Properties panel")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Layers \(/i }));
+    expect(screen.getByLabelText("Left sidebar")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Properties/i }));
+    expect(screen.getByLabelText("Properties panel")).toBeInTheDocument();
 
     expect(screen.queryByRole("menuitem", { name: "Layout" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
@@ -25,7 +30,8 @@ describe("STORY-QA04 editor visual layout", () => {
     expect(css).toContain("--gd-size-selection-handle: 16px;");
     expect(css).toContain("--gd-size-rotation-handle: 16px;");
     expect(css).toContain("--gd-size-connection-port: 16px;");
-    expect(css).toContain("grid-template-columns: 320px minmax(0, 1fr) 320px;");
+    expect(css).toContain("var(--gd-left-sidebar-width, 0px)");
+    expect(css).toContain("var(--gd-right-sidebar-width, 0px)");
     expect(css).toContain("gap: 8px;");
     expect(css).toContain(".selection-handle:hover");
     expect(css).toContain(".connection-port:hover");
