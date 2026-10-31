@@ -350,6 +350,7 @@ function isConnectableElement(element: DiagramElement): boolean {
 type TextAlignHorizontal = "left" | "center" | "right";
 type TextAlignVertical = "top" | "middle" | "bottom";
 type TextOverflowMode = "grow-shape" | "shrink-text";
+type ConnectorRouting = "straight" | "orthogonal" | "curved";
 
 function resolveTextAlignmentFromClick(
   element: DiagramElement,
@@ -378,6 +379,10 @@ function createDefaultLayer(): EditorLayer {
 
 function resolveTextOverflowMode(element: DiagramElement): TextOverflowMode {
   return element.textOverflowMode ?? "grow-shape";
+}
+
+function resolveConnectorRouting(element: DiagramElement): ConnectorRouting {
+  return element.connectorRouting ?? "straight";
 }
 
 function estimateTextLineCount(text: string, width: number): number {
@@ -1710,6 +1715,23 @@ export function EditorSurface({
     [readOnly, selectedElement, updateSelectedElement],
   );
 
+  const handleSelectConnectorRouting = useCallback(
+    (connectorRouting: ConnectorRouting) => {
+      if (readOnly || !selectedElement || selectedElement.kind !== "line") {
+        return;
+      }
+      updateSelectedElement((element) =>
+        element.kind === "line"
+          ? {
+              ...element,
+              connectorRouting,
+            }
+          : element,
+      );
+    },
+    [readOnly, selectedElement, updateSelectedElement],
+  );
+
   const selectedStyleVariant: PaletteStyleVariant | null = selectedElement
     ? selectedElement.styleVariant ?? getDefaultStyleVariant(selectedElement.kind)
     : null;
@@ -1722,6 +1744,10 @@ export function EditorSurface({
   const selectedTextOverflowMode: TextOverflowMode | undefined = selectedElement
     ? resolveTextOverflowMode(selectedElement)
     : undefined;
+  const selectedConnectorRouting: ConnectorRouting | undefined =
+    selectedElement?.kind === "line"
+      ? resolveConnectorRouting(selectedElement)
+      : undefined;
 
   const shouldShowShapeCustomizer =
     !readOnly &&
@@ -4441,6 +4467,16 @@ export function EditorSurface({
                 ? handleSelectTextOverflowMode
                 : undefined
             }
+            selectedConnectorRouting={
+              shouldShowShapeCustomizer && selectedElement?.kind === "line"
+                ? selectedConnectorRouting
+                : undefined
+            }
+            onSelectConnectorRouting={
+              shouldShowShapeCustomizer && selectedElement?.kind === "line"
+                ? handleSelectConnectorRouting
+                : undefined
+            }
           />
         )}
 
@@ -4610,6 +4646,39 @@ export function EditorSurface({
             };
 
             if (element.kind === "line") {
+              const connectorRouting = resolveConnectorRouting(element);
+              const linePoints =
+                element.points && element.points.length >= 2
+                  ? element.points
+                  : [
+                      { x: element.x, y: element.y },
+                      { x: element.x + element.width, y: element.y + element.height },
+                    ];
+              const localPoints = linePoints.map((point) => ({
+                x: point.x - element.x,
+                y: point.y - element.y,
+              }));
+              const polylinePoints = localPoints
+                .map((point) => `${point.x},${point.y}`)
+                .join(" ");
+              const firstPoint = localPoints[0];
+              const lastPoint = localPoints[localPoints.length - 1];
+              const curvedPath =
+                firstPoint && lastPoint
+                  ? (() => {
+                      const midX = (firstPoint.x + lastPoint.x) / 2;
+                      const midY = (firstPoint.y + lastPoint.y) / 2;
+                      const dx = lastPoint.x - firstPoint.x;
+                      const dy = lastPoint.y - firstPoint.y;
+                      const length = Math.max(1, Math.hypot(dx, dy));
+                      const normalX = -dy / length;
+                      const normalY = dx / length;
+                      const offset = Math.min(48, Math.max(18, length * 0.15));
+                      const controlX = midX + normalX * offset;
+                      const controlY = midY + normalY * offset;
+                      return `M ${firstPoint.x} ${firstPoint.y} Q ${controlX} ${controlY} ${lastPoint.x} ${lastPoint.y}`;
+                    })()
+                  : "";
               const lineStyle: CSSProperties = {
                 ...style,
                 background: "transparent",
@@ -4625,22 +4694,37 @@ export function EditorSurface({
                   style={lineStyle}
                   aria-label={accessibleElementLabelById.get(element.id) ?? "Connector"}
                 >
-                  <div
+                  <svg
                     style={{
                       width: "100%",
                       height: "100%",
-                      borderTop: `${strokeWidth}px solid ${
-                        borderColor
-                      }`,
-                      borderTopStyle: isDashedStyle ? "dashed" : "solid",
-                      borderLeft: "0",
-                      borderRight: "0",
-                      borderBottom: "0",
-                      boxShadow:
-                        "inset 0 0 0 1px var(--gd-element-line-shadow, rgba(17, 24, 39, 0.15))",
-                      borderRadius: 0,
+                      overflow: "visible",
                     }}
-                  />
+                    viewBox={`0 0 ${Math.max(1, element.width)} ${Math.max(1, element.height)}`}
+                    preserveAspectRatio="none"
+                  >
+                    {connectorRouting === "curved" && curvedPath ? (
+                      <path
+                        d={curvedPath}
+                        fill="none"
+                        stroke={borderColor}
+                        strokeWidth={isSelected ? strokeWidth + 1 : strokeWidth}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeDasharray={isDashedStyle ? "8 5" : undefined}
+                      />
+                    ) : (
+                      <polyline
+                        points={polylinePoints}
+                        fill="none"
+                        stroke={borderColor}
+                        strokeWidth={isSelected ? strokeWidth + 1 : strokeWidth}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeDasharray={isDashedStyle ? "8 5" : undefined}
+                      />
+                    )}
+                  </svg>
                 </div>
               );
             }

@@ -69,6 +69,10 @@ interface ContextPaletteProps {
   onSelectTextAlignVertical?: (value: "top" | "middle" | "bottom") => void;
   selectedTextOverflowMode?: "grow-shape" | "shrink-text";
   onSelectTextOverflowMode?: (value: "grow-shape" | "shrink-text") => void;
+  selectedConnectorRouting?: "straight" | "orthogonal" | "curved";
+  onSelectConnectorRouting?: (
+    value: "straight" | "orthogonal" | "curved",
+  ) => void;
 }
 
 export function ContextPalette({
@@ -89,6 +93,8 @@ export function ContextPalette({
   onSelectTextAlignVertical,
   selectedTextOverflowMode,
   onSelectTextOverflowMode,
+  selectedConnectorRouting,
+  onSelectConnectorRouting,
 }: ContextPaletteProps) {
   const profile = profileId ? getProfile(profileId) : null;
   const priorityByKind = new Map<string, number>(
@@ -209,6 +215,23 @@ export function ContextPalette({
               onClick={() => onSelectTextOverflowMode(mode)}
             >
               {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {onSelectConnectorRouting ? (
+        <div className="context-palette-section">
+          {(["straight", "orthogonal", "curved"] as const).map((mode) => (
+            <button
+              key={`connector-routing-${mode}`}
+              type="button"
+              className="context-palette-style-button"
+              aria-label={`Set connector routing ${mode}`}
+              aria-pressed={selectedConnectorRouting === mode}
+              onClick={() => onSelectConnectorRouting(mode)}
+            >
+              Route:{mode}
             </button>
           ))}
         </div>
