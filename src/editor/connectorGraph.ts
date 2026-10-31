@@ -1,4 +1,5 @@
 import type { DiagramElement, Point } from './types';
+import { resolveElementPorts } from "./ports";
 
 export type ConnectorInvariantResult = {
   valid: boolean;
@@ -124,6 +125,31 @@ function pointOnElementBorderToward(
   };
 }
 
+function nearestPortPointToward(
+  element: DiagramElement,
+  target: Point,
+): Point | null {
+  const ports = resolveElementPorts(element);
+  if (ports.length === 0) {
+    return null;
+  }
+  let best = ports[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  ports.forEach((port) => {
+    const dx = port.absoluteX - target.x;
+    const dy = port.absoluteY - target.y;
+    const distance = dx * dx + dy * dy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = port;
+    }
+  });
+  return {
+    x: best.absoluteX,
+    y: best.absoluteY,
+  };
+}
+
 function getCollapsedAncestor(
   element: DiagramElement,
   elementsById: Map<string, DiagramElement>,
@@ -212,8 +238,12 @@ export function enforceConnectorInvariants(
     const fromAnchorCenter = elementCenter(fromAnchor);
     const toAnchorCenter = elementCenter(toAnchor);
 
-    const fromPoint = pointOnElementBorderToward(fromAnchor, toAnchorCenter);
-    const toPoint = pointOnElementBorderToward(toAnchor, fromAnchorCenter);
+    const fromPoint =
+      nearestPortPointToward(fromAnchor, toAnchorCenter) ??
+      pointOnElementBorderToward(fromAnchor, toAnchorCenter);
+    const toPoint =
+      nearestPortPointToward(toAnchor, fromAnchorCenter) ??
+      pointOnElementBorderToward(toAnchor, fromAnchorCenter);
     const connectorRouting = resolveConnectorRouting(element);
     const routedPoints =
       connectorRouting === "orthogonal"

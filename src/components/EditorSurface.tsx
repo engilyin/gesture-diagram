@@ -665,16 +665,8 @@ export function EditorSurface({
     ) {
       return selectedElement;
     }
-    if (
-      hoveredElement &&
-      hoveredElement.kind !== "line" &&
-      hoveredElement.kind !== "ink" &&
-      !isElementInteractionLocked(hoveredElement)
-    ) {
-      return hoveredElement;
-    }
     return null;
-  }, [hoveredElement, isElementInteractionLocked, selectedElement]);
+  }, [isElementInteractionLocked, selectedElement]);
 
   const { renderableElements, hiddenConnectionIndicatorByElementId } = useMemo(() => {
     const layerVisibleElements = elements.filter((element) => {
@@ -2339,16 +2331,6 @@ export function EditorSurface({
 
     const local = getLocalPoint(event);
     const world = screenToWorld(local);
-    const shouldResolveHover =
-      dragMode === null && !isPanning && !connectionDrag && !isMinimapDragging;
-    const hovered = shouldResolveHover ? hitTestElement(world) : null;
-    const nextHoveredId =
-      hovered && hovered.kind !== "line" && hovered.kind !== "ink"
-        ? hovered.id
-        : null;
-    setHoveredElementId((current) =>
-      current === nextHoveredId ? current : nextHoveredId,
-    );
 
     if (connectionDrag) {
       const target = hitTestConnectableElement(world, connectionDrag.fromId);
@@ -2537,6 +2519,26 @@ export function EditorSurface({
     }
   };
 
+  const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (readOnly || dragMode !== null || isPanning || connectionDrag || isMinimapDragging) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const local = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+    const world = screenToWorld(local);
+    const hovered = hitTestElement(world);
+    const nextHoveredId =
+      hovered && hovered.kind !== "line" && hovered.kind !== "ink"
+        ? hovered.id
+        : null;
+    setHoveredElementId((current) =>
+      current === nextHoveredId ? current : nextHoveredId,
+    );
+  };
+
   const handlePointerUp = (event?: ReactPointerEvent<HTMLDivElement>) => {
     if (readOnly) {
       return;
@@ -2652,7 +2654,6 @@ export function EditorSurface({
       }
 
       setConnectionDrag(null);
-      setHoveredElementId(null);
       setDragMode(null);
       setSnapGuide(null);
       setContainerDropTargetId(null);
@@ -2688,7 +2689,6 @@ export function EditorSurface({
       setIsPanning(false);
       setSnapGuide(null);
       setContainerDropTargetId(null);
-      setHoveredElementId(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
       return;
@@ -2716,7 +2716,6 @@ export function EditorSurface({
       setIsPanning(false);
       setSnapGuide(null);
       setContainerDropTargetId(null);
-      setHoveredElementId(null);
       dragStartRef.current = null;
       lastPointerWorldRef.current = null;
       return;
@@ -2745,7 +2744,6 @@ export function EditorSurface({
         setMarqueeSelection(null);
         setDragMode(null);
         setIsPanning(false);
-        setHoveredElementId(null);
         dragStartRef.current = null;
         lastPointerWorldRef.current = null;
         return;
@@ -2762,7 +2760,6 @@ export function EditorSurface({
         setMarqueeSelection(null);
         setDragMode(null);
         setIsPanning(false);
-        setHoveredElementId(null);
         dragStartRef.current = null;
         lastPointerWorldRef.current = null;
         return;
@@ -2778,7 +2775,6 @@ export function EditorSurface({
         setMarqueeSelection(null);
         setDragMode(null);
         setIsPanning(false);
-        setHoveredElementId(null);
         dragStartRef.current = null;
         lastPointerWorldRef.current = null;
         return;
@@ -2796,7 +2792,6 @@ export function EditorSurface({
         setMarqueeSelection(null);
         setDragMode(null);
         setIsPanning(false);
-        setHoveredElementId(null);
         dragStartRef.current = null;
         lastPointerWorldRef.current = null;
         return;
@@ -2837,7 +2832,6 @@ export function EditorSurface({
     setIsPanning(false);
     setSnapGuide(null);
     setContainerDropTargetId(null);
-    setHoveredElementId(null);
     dragStartRef.current = null;
     lastPointerWorldRef.current = null;
   };
@@ -4596,6 +4590,7 @@ export function EditorSurface({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onMouseMove={handleMouseMove}
         onMouseLeave={() =>
           setHoveredElementId((current) => (current === null ? current : null))
         }
