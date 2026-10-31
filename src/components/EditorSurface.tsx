@@ -9,7 +9,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { GestureFallbackPanel } from "./GestureFallbackPanel";
-import { ContextPalette, type PaletteAction } from "./ContextPalette";
+import {
+  ContextPalette,
+  type PaletteAction,
+  type PaletteStyleVariant,
+} from "./ContextPalette";
 import { DocumentPersistenceControls } from "./DocumentPersistenceControls";
 import { SelectionHandles } from "./SelectionHandles";
 import { ConnectionPorts } from "./ConnectionPorts";
@@ -93,6 +97,14 @@ const minimapHeight = 125;
 const fitPadding = 48;
 const defaultDocumentTitle = "Untitled diagram";
 const defaultCanvasBackground = "#ffffff";
+const paletteColorSwatches = [
+  "#4f46e5",
+  "#0f766e",
+  "#2563eb",
+  "#b91c1c",
+  "#ca8a04",
+  "#374151",
+];
 const defaultLayerColor = "#4f46e5";
 const onboardingDismissedStorageKey = "gd-onboarding-overlay-dismissed";
 
@@ -118,6 +130,16 @@ type ShapeChoice =
   | "text"
   | "container"
   | "line";
+
+function getDefaultStyleVariant(kind: DiagramElement["kind"]): PaletteStyleVariant {
+  if (kind === "container") {
+    return "dashed";
+  }
+  if (kind === "ink" || kind === "line" || kind === "text") {
+    return "outlined";
+  }
+  return "filled";
+}
 
 type EditorLayer = {
   id: string;
@@ -513,11 +535,9 @@ export function EditorSurface({
     );
 
     const nextActions: PaletteAction[] = [
-      { id: "convert", label: "Convert", kind: "convert", rank: 1 },
-      { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 2 },
-      { id: "style", label: "Style", kind: "style", rank: 3 },
+      { id: "duplicate", label: "Duplicate", kind: "duplicate", rank: 1 },
       ...(canGroup
-        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 4 }]
+        ? [{ id: "group", label: "Group", kind: "group" as const, rank: 2 }]
         : []),
       ...(canUngroup
         ? [
@@ -525,17 +545,17 @@ export function EditorSurface({
               id: "ungroup",
               label: "Ungroup",
               kind: "ungroup" as const,
-              rank: 5,
+              rank: 3,
             },
           ]
         : []),
       ...(hasUnlockedSelection
-        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 6 }]
+        ? [{ id: "lock", label: "Lock", kind: "lock" as const, rank: 4 }]
         : []),
       ...(hasLockedSelection
-        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 7 }]
+        ? [{ id: "unlock", label: "Unlock", kind: "unlock" as const, rank: 5 }]
         : []),
-      { id: "delete", label: "Delete", kind: "delete", rank: 8 },
+      { id: "delete", label: "Delete", kind: "delete", rank: 6 },
     ];
 
     setSelectedActions(nextActions);
@@ -636,17 +656,20 @@ export function EditorSurface({
     y: element.y + element.height / 2,
   });
 
-  const updateSelectedElement = (updater: (element: DiagramElement) => DiagramElement) => {
-    if (!selectedId) {
-      return;
-    }
+  const updateSelectedElement = useCallback(
+    (updater: (element: DiagramElement) => DiagramElement) => {
+      if (!selectedId) {
+        return;
+      }
 
-    applyElementsWithInvariants((current) =>
-      current.map((element) =>
-        element.id === selectedId ? updater(element) : element,
-      ),
-    );
-  };
+      applyElementsWithInvariants((current) =>
+        current.map((element) =>
+          element.id === selectedId ? updater(element) : element,
+        ),
+      );
+    },
+    [applyElementsWithInvariants, selectedId],
+  );
 
   const startInlineTextEdit = useCallback(
     (element: DiagramElement) => {
@@ -812,54 +835,6 @@ export function EditorSurface({
       return;
     }
 
-    if (action.kind === "style") {
-      const colors = ["#4f46e5", "#0f766e", "#2563eb", "#b91c1c"];
-      updateSelectedElement((element) => {
-        const currentColor = element.color ?? colors[0];
-        const currentIndex = colors.indexOf(currentColor);
-        const nextColor =
-          colors[(currentIndex + 1 + colors.length) % colors.length];
-
-        return {
-          ...element,
-          color: nextColor,
-        };
-      });
-      return;
-    }
-
-    if (action.kind === "convert") {
-      const conversionOrder: Array<DiagramElement["kind"]> = [
-        "rect",
-        "ellipse",
-        "diamond",
-        "triangle",
-        "container",
-        "text",
-      ];
-      const currentKind =
-        selectedElement && conversionOrder.includes(selectedElement.kind)
-          ? selectedElement.kind
-          : "rect";
-      const currentIndex = conversionOrder.indexOf(currentKind);
-      const nextKind =
-        conversionOrder[
-          (currentIndex + 1 + conversionOrder.length) % conversionOrder.length
-        ] ?? "rect";
-      updateSelectedElement((element) => ({
-        ...element,
-        kind: nextKind,
-        text: nextKind === "text" ? element.text ?? "" : element.text,
-      }));
-      if (selectedElement) {
-        startInlineTextEdit({
-          ...selectedElement,
-          kind: nextKind,
-        });
-      }
-      return;
-    }
-
     if (action.kind === "duplicate") {
       duplicateSelection();
       return;
@@ -941,6 +916,80 @@ export function EditorSurface({
       setSelection(makeSelection());
     }
   };
+
+  const handleConvertKind = useCallback(
+    (nextKind: DiagramElement["kind"]) => {
+      if (readOnly || !selectedElement || selectedElement.kind === "ink") {
+        return;
+      }
+
+      updateSelectedElement((element) => ({
+        ...element,
+        kind: nextKind,
+        text: nextKind === "text" ? element.text ?? "" : element.text,
+      }));
+
+      if (nextKind === "text") {
+        startInlineTextEdit({
+          ...selectedElement,
+          kind: nextKind,
+        });
+      }
+    },
+    [readOnly, selectedElement, startInlineTextEdit, updateSelectedElement],
+  );
+
+  const handleSelectColor = useCallback(
+    (color: string) => {
+      if (readOnly || !selectedElement || selectedElement.kind === "ink") {
+        return;
+      }
+      updateSelectedElement((element) => ({
+        ...element,
+        color,
+      }));
+    },
+    [readOnly, selectedElement, updateSelectedElement],
+  );
+
+  const handleSelectStyleVariant = useCallback(
+    (styleVariant: PaletteStyleVariant) => {
+      if (readOnly || !selectedElement || selectedElement.kind === "ink") {
+        return;
+      }
+      updateSelectedElement((element) => ({
+        ...element,
+        styleVariant,
+      }));
+    },
+    [readOnly, selectedElement, updateSelectedElement],
+  );
+
+  const selectedStyleVariant: PaletteStyleVariant | null = selectedElement
+    ? selectedElement.styleVariant ?? getDefaultStyleVariant(selectedElement.kind)
+    : null;
+
+  const shouldShowShapeCustomizer =
+    !readOnly &&
+    selection.ids.length === 1 &&
+    selectedElement != null &&
+    selectedElement.kind !== "ink";
+
+  const palettePosition = useMemo(() => {
+    if (!shouldShowShapeCustomizer || !selectedElement) {
+      return null;
+    }
+    const estimatedWidth = 420;
+    const estimatedHeight = 150;
+    const desiredX = view.x + (selectedElement.x + selectedElement.width) * view.scale + 12;
+    const desiredY = view.y + selectedElement.y * view.scale - 8;
+    const maxX = Math.max(12, surfaceSize.width - estimatedWidth - 12);
+    const maxY = Math.max(12, surfaceSize.height - estimatedHeight - 12);
+    return {
+      x: Math.min(Math.max(12, desiredX), maxX),
+      y: Math.min(Math.max(12, desiredY), maxY),
+    };
+  }, [selectedElement, shouldShowShapeCustomizer, surfaceSize.height, surfaceSize.width, view.scale, view.x, view.y]);
 
   const buildDocument = useCallback(() => {
     const nextDocument = createDocumentFromElements(
@@ -2452,14 +2501,6 @@ export function EditorSurface({
         </div>
       )}
 
-      {selectedActions.length > 0 && (
-        <ContextPalette
-          actions={selectedActions}
-          profileId={profileId}
-          onAction={handlePaletteAction}
-        />
-      )}
-
       {pendingDecision && (
         <GestureFallbackPanel
           message={`Pick a shape style or keep as ink (${pendingDecision.confidence.toFixed(2)} confidence).`}
@@ -2481,6 +2522,28 @@ export function EditorSurface({
         onMouseLeave={() => setHoveredElementId(null)}
         onWheel={handleWheel}
       >
+        {selectedActions.length > 0 && (
+          <ContextPalette
+            actions={selectedActions}
+            profileId={profileId}
+            onAction={handlePaletteAction}
+            selectedKind={shouldShowShapeCustomizer ? selectedElement?.kind : undefined}
+            selectedColor={
+              shouldShowShapeCustomizer
+                ? selectedElement?.color ?? paletteColorSwatches[0]
+                : undefined
+            }
+            selectedStyleVariant={shouldShowShapeCustomizer ? selectedStyleVariant ?? undefined : undefined}
+            position={shouldShowShapeCustomizer ? palettePosition ?? undefined : undefined}
+            colorSwatches={shouldShowShapeCustomizer ? paletteColorSwatches : []}
+            onConvertKind={shouldShowShapeCustomizer ? handleConvertKind : undefined}
+            onSelectColor={shouldShowShapeCustomizer ? handleSelectColor : undefined}
+            onSelectStyleVariant={
+              shouldShowShapeCustomizer ? handleSelectStyleVariant : undefined
+            }
+          />
+        )}
+
         <div
           aria-label="Minimap"
           role="application"
@@ -2623,17 +2686,21 @@ export function EditorSurface({
               : isSelected
                 ? selectedColor
                 : baseColor;
+            const styleVariant = element.styleVariant ?? getDefaultStyleVariant(element.kind);
+            const isFilledStyle = styleVariant === "filled";
+            const isDashedStyle = styleVariant === "dashed";
             const style: CSSProperties = {
               position: "absolute",
               left: element.x,
               top: element.y,
               width: element.width,
               height: element.height,
-              border: `${strokeWidth}px solid ${borderColor}`,
-              background:
-                element.kind === "rect"
-                  ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
-                  : "transparent",
+              borderWidth: strokeWidth,
+              borderStyle: isDashedStyle ? "dashed" : "solid",
+              borderColor,
+              background: isFilledStyle
+                ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                : "transparent",
               borderRadius: element.kind === "rect" ? 8 : 0,
               boxSizing: "border-box",
             };
@@ -2657,6 +2724,7 @@ export function EditorSurface({
                       borderTop: `${strokeWidth}px solid ${
                         borderColor
                       }`,
+                      borderTopStyle: isDashedStyle ? "dashed" : "solid",
                       borderLeft: "0",
                       borderRight: "0",
                       borderBottom: "0",
@@ -2739,9 +2807,14 @@ export function EditorSurface({
                   >
                     <polygon
                       points={`${element.width / 2},0 ${element.width},${element.height / 2} ${element.width / 2},${element.height} 0,${element.height / 2}`}
-                      fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                      fill={
+                        isFilledStyle
+                          ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                          : "transparent"
+                      }
                       stroke={borderColor}
                       strokeWidth={strokeWidth}
+                      strokeDasharray={isDashedStyle ? "8 5" : undefined}
                     />
                   </svg>
                   {element.text?.trim() ? (
@@ -2777,9 +2850,14 @@ export function EditorSurface({
                   >
                     <polygon
                       points={`${element.width / 2},0 ${element.width},${element.height} 0,${element.height}`}
-                      fill="var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                      fill={
+                        isFilledStyle
+                          ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                          : "transparent"
+                      }
                       stroke={borderColor}
                       strokeWidth={strokeWidth}
+                      strokeDasharray={isDashedStyle ? "8 5" : undefined}
                     />
                   </svg>
                   {element.text?.trim() ? (
@@ -2801,7 +2879,10 @@ export function EditorSurface({
                     style={{
                       width: "100%",
                       height: "100%",
-                      border: `1px dashed ${borderColor}`,
+                      border: `1px ${isDashedStyle ? "dashed" : "solid"} ${borderColor}`,
+                      background: isFilledStyle
+                        ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                        : "transparent",
                       padding: "6px 8px",
                       color: baseColor,
                       fontSize: "14px",
@@ -2832,9 +2913,10 @@ export function EditorSurface({
                   aria-label={`Shape ${element.kind}`}
                   style={{
                     ...style,
-                    borderStyle: "dashed",
                     borderColor,
-                    background: "rgba(148, 163, 184, 0.08)",
+                    background: isFilledStyle
+                      ? "rgba(148, 163, 184, 0.08)"
+                      : "transparent",
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
@@ -2853,7 +2935,9 @@ export function EditorSurface({
                   style={{
                     ...style,
                     borderRadius: "50%",
-                    background: "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))",
+                    background: isFilledStyle
+                      ? "var(--gd-element-rect-fill, rgba(79, 70, 229, 0.12))"
+                      : "transparent",
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >

@@ -25,7 +25,6 @@ describe("EditorSurface", () => {
     fireEvent.pointerMove(canvas, { clientX: 100, clientY: 160 });
     fireEvent.pointerMove(canvas, { clientX: 104, clientY: 104 });
     fireEvent.pointerUp(canvas);
-    fireEvent.click(screen.getByRole("button", { name: "Keep as Ink" }));
 
     expect(screen.getByText(/Selected: 1/)).toBeInTheDocument();
     expect(

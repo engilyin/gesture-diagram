@@ -301,13 +301,57 @@ button {
 .context-palette {
   display: flex;
   align-items: center;
-  gap: var(--gd-space-1);
+  flex-wrap: wrap;
+  gap: var(--gd-space-2);
   width: fit-content;
-  padding: var(--gd-space-1) var(--gd-space-2);
+  max-width: min(460px, calc(100% - 24px));
+  padding: var(--gd-space-2);
   border: 1px solid var(--gd-color-palette-border);
   border-radius: var(--gd-radius-lg);
   background: var(--gd-color-palette-bg);
   box-shadow: 0 8px 20px var(--gd-color-palette-shadow);
+  pointer-events: auto;
+}
+
+.context-palette-section {
+  display: flex;
+  align-items: center;
+  gap: var(--gd-space-1);
+  padding-right: var(--gd-space-2);
+  border-right: 1px solid var(--gd-color-border);
+}
+
+.context-palette-section:last-of-type {
+  border-right: none;
+  padding-right: 0;
+}
+
+.context-palette-icon-button {
+  min-width: 32px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.95rem;
+}
+
+.context-palette-style-button {
+  text-transform: capitalize;
+  padding: 0.25rem 0.5rem;
+}
+
+.context-palette-secondary-action {
+  padding: 0.25rem 0.6rem;
+}
+
+.context-palette-swatch {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--gd-color-border);
+  padding: 0;
+}
+
+.context-palette button[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--gd-color-selection-handle-border);
 }
 
 .document-settings-panel {

@@ -1,4 +1,7 @@
 import { getProfile } from "../editor/profiles/registry";
+import type { DiagramElement } from "../editor/types";
+
+export type PaletteStyleVariant = "filled" | "outlined" | "dashed";
 
 export type PaletteAction = {
   id: string;
@@ -15,16 +18,46 @@ export type PaletteAction = {
   rank: number;
 };
 
+const shapeChoices: Array<{
+  kind: DiagramElement["kind"];
+  label: string;
+  icon: string;
+}> = [
+  { kind: "rect", label: "Rectangle", icon: "▭" },
+  { kind: "ellipse", label: "Ellipse", icon: "◯" },
+  { kind: "diamond", label: "Diamond", icon: "◇" },
+  { kind: "triangle", label: "Triangle", icon: "△" },
+  { kind: "container", label: "Container", icon: "▣" },
+  { kind: "text", label: "Text", icon: "T" },
+  { kind: "line", label: "Line", icon: "↗" },
+];
+
 interface ContextPaletteProps {
   actions: PaletteAction[];
   profileId?: string;
   onAction?: (action: PaletteAction) => void;
+  selectedKind?: DiagramElement["kind"];
+  selectedColor?: string;
+  selectedStyleVariant?: PaletteStyleVariant;
+  position?: { x: number; y: number };
+  colorSwatches?: string[];
+  onConvertKind?: (kind: DiagramElement["kind"]) => void;
+  onSelectColor?: (color: string) => void;
+  onSelectStyleVariant?: (style: PaletteStyleVariant) => void;
 }
 
 export function ContextPalette({
   actions,
   profileId,
   onAction,
+  selectedKind,
+  selectedColor,
+  selectedStyleVariant,
+  position,
+  colorSwatches = [],
+  onConvertKind,
+  onSelectColor,
+  onSelectStyleVariant,
 }: ContextPaletteProps) {
   const profile = profileId ? getProfile(profileId) : null;
   const priorityByKind = new Map<string, number>(
@@ -36,7 +69,67 @@ export function ContextPalette({
       className="context-palette"
       aria-label="Context actions"
       role="toolbar"
+      style={
+        position
+          ? {
+              position: "absolute",
+              left: `${position.x}px`,
+              top: `${position.y}px`,
+              zIndex: 30,
+            }
+          : undefined
+      }
     >
+      {selectedKind && onConvertKind ? (
+        <div className="context-palette-section">
+          {shapeChoices.map((choice) => (
+            <button
+              key={choice.kind}
+              type="button"
+              className="context-palette-icon-button"
+              aria-label={`Convert to ${choice.label}`}
+              aria-pressed={selectedKind === choice.kind}
+              onClick={() => onConvertKind(choice.kind)}
+            >
+              {choice.icon}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {colorSwatches.length > 0 && onSelectColor ? (
+        <div className="context-palette-section">
+          {colorSwatches.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className="context-palette-swatch"
+              aria-label={`Set color ${color}`}
+              aria-pressed={selectedColor === color}
+              style={{ background: color }}
+              onClick={() => onSelectColor(color)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {onSelectStyleVariant ? (
+        <div className="context-palette-section">
+          {(["filled", "outlined", "dashed"] as const).map((style) => (
+            <button
+              key={style}
+              type="button"
+              className="context-palette-style-button"
+              aria-label={`Set ${style} style`}
+              aria-pressed={selectedStyleVariant === style}
+              onClick={() => onSelectStyleVariant(style)}
+            >
+              {style}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {actions
         .slice()
         .sort((a, b) => {
@@ -57,6 +150,7 @@ export function ContextPalette({
             key={action.id}
             type="button"
             aria-label={action.label}
+            className="context-palette-secondary-action"
             onClick={() => onAction?.(action)}
           >
             {action.label}
