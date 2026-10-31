@@ -2,7 +2,7 @@ interface GestureFallbackPanelProps {
   onKeepInk: () => void;
   onRetryRecognition: () => void;
   onChooseShape: (
-    kind: "rect" | "ellipse" | "diamond" | "triangle" | "text" | "line",
+    kind: "rect" | "ellipse" | "diamond" | "triangle" | "text" | "container" | "line",
   ) => void;
   message?: string;
 }
@@ -35,6 +35,9 @@ export function GestureFallbackPanel({
         </button>
         <button type="button" onClick={() => onChooseShape("text")}>
           Text
+        </button>
+        <button type="button" onClick={() => onChooseShape("container")}>
+          Container
         </button>
         <button type="button" onClick={() => onChooseShape("line")}>
           Line

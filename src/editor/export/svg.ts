@@ -67,6 +67,11 @@ export function exportSvg(
       return `<g><rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" fill="transparent" stroke="${escapeXml(stroke)}" stroke-dasharray="4 3" stroke-width="${Math.max(1, strokeWidth - 1)}" /><text x="${element.x + 8}" y="${element.y + 24}" font-family="Inter, Arial, sans-serif" font-size="16" fill="${escapeXml(stroke)}">${text}</text></g>`;
     }
 
+    if (element.kind === "container") {
+      const title = escapeXml((element.text ?? "Container").trim());
+      return `<g><rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="8" ry="8" fill="rgba(148,163,184,0.08)" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" stroke-dasharray="6 4" /><text x="${element.x + 10}" y="${element.y + 20}" font-family="Inter, Arial, sans-serif" font-size="12" fill="${escapeXml(stroke)}">${title}</text></g>`;
+    }
+
     return `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="8" ry="8" fill="rgba(79,70,229,0.12)" stroke="${escapeXml(stroke)}" stroke-width="${strokeWidth}" />`;
   });
 

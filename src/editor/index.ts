@@ -18,6 +18,7 @@ export type {
   DocumentChangeSubscriber,
 } from "./document";
 export {
+  createContainer,
   createDiamond,
   createEllipse,
   createLine,
@@ -52,9 +53,15 @@ export {
   type ConnectorInvariantResult,
 } from "./connectorGraph";
 export {
+  autoSizeContainers,
+  collectOwnedDescendantIds,
+  CONTAINER_PADDING,
   getGroupedSelectionIds,
   groupElements,
+  isContainerElement,
   moveGroupedElements,
+  reconcileContainerOwnership,
+  releaseChildrenFromParents,
   ungroupElements,
 } from "./grouping";
 export {

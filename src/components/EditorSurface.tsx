@@ -26,9 +26,13 @@ import {
   saveDocument,
 } from "../editor/document";
 import {
+  autoSizeContainers,
+  collectOwnedDescendantIds,
   getGroupedSelectionIds,
   groupElements,
   moveGroupedElements,
+  releaseChildrenFromParents,
+  reconcileContainerOwnership,
   ungroupElements,
 } from "../editor/grouping";
 import { normalizeStroke } from "../editor/input";
@@ -61,6 +65,7 @@ import {
   createEllipse,
   createInk,
   createLine,
+  createContainer,
   createRectangle,
   createText,
   createTriangle,
@@ -93,6 +98,7 @@ type ShapeChoice =
   | "diamond"
   | "triangle"
   | "text"
+  | "container"
   | "line";
 
 function getStrokeBounds(points: Point[]): Bounds {
@@ -122,6 +128,9 @@ function createShapeFromStroke(kind: ShapeChoice, strokePoints: Point[]): Diagra
   }
   if (kind === "line") {
     return createLine(bounds.minX, bounds.minY, width, height);
+  }
+  if (kind === "container") {
+    return createContainer(bounds.minX, bounds.minY, width, height);
   }
   if (kind === "text") {
     return createText(bounds.minX, bounds.minY, width, height);
@@ -414,7 +423,9 @@ export function EditorSurface({
     (updater: (current: DiagramElement[]) => DiagramElement[]) => {
     setElements((current) => {
       const updated = updater(current);
-      const repaired = enforceConnectorInvariants(updated);
+      const reconciled = reconcileContainerOwnership(updated);
+      const resized = autoSizeContainers(reconciled);
+      const repaired = enforceConnectorInvariants(resized);
       const nextElements = repaired.repairedElements;
 
       if (!applyingHistoryRef.current) {
@@ -654,6 +665,7 @@ export function EditorSurface({
         "ellipse",
         "diamond",
         "triangle",
+        "container",
         "text",
       ];
       const currentKind =
@@ -727,10 +739,32 @@ export function EditorSurface({
       const idsToDelete = new Set(
         getGroupedSelectionIds(elements, [selectedId]),
       );
+      const ownedDescendants = collectOwnedDescendantIds(
+        elements,
+        [...idsToDelete],
+      );
+      const hasOwnedDescendants = ownedDescendants.length > 0;
+
+      if (hasOwnedDescendants) {
+        const shouldDeleteChildren = window.confirm(
+          "Delete this container and all children? Click Cancel to release children.",
+        );
+
+        if (!shouldDeleteChildren) {
+          applyElementsWithInvariants((current) => {
+            const deleted = current.filter((element) => !idsToDelete.has(element.id));
+            return releaseChildrenFromParents(deleted, idsToDelete);
+          });
+          setSelection(makeSelection());
+          return;
+        }
+      }
+
+      const idsWithDescendants = new Set([...idsToDelete, ...ownedDescendants]);
       applyElementsWithInvariants((current) =>
         current.filter(
           (element) =>
-            !idsToDelete.has(element.id) || isElementLocked(element),
+            !idsWithDescendants.has(element.id) || isElementLocked(element),
         ),
       );
       setSelection(makeSelection());
@@ -2046,6 +2080,33 @@ export function EditorSurface({
                     {element.text && element.text.length > 0
                       ? element.text
                       : "Type text"}
+                  </div>
+                </div>
+              );
+            }
+
+            if (element.kind === "container") {
+              return (
+                <div
+                  key={element.id}
+                  style={{
+                    ...style,
+                    borderStyle: "dashed",
+                    borderColor: isSelected ? selectedColor : baseColor,
+                    background: "rgba(148, 163, 184, 0.08)",
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 8,
+                      top: 6,
+                      fontSize: 12,
+                      color: baseColor,
+                      userSelect: "none",
+                    }}
+                  >
+                    {element.text?.trim() || "Container"}
                   </div>
                 </div>
               );
