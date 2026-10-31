@@ -415,6 +415,11 @@ button {
   gap: 0.4rem;
 }
 
+.layer-row.solo-layer {
+  outline: 1px solid var(--gd-color-selection-handle-border);
+  border-radius: var(--gd-radius-sm);
+}
+
 .layer-select {
   width: 1.8rem;
   padding: 0.2rem;

@@ -436,6 +436,7 @@ export function EditorSurface({
   const [collapsedOutlineGroups, setCollapsedOutlineGroups] = useState<string[]>([]);
   const [isLayoutDialogOpen, setIsLayoutDialogOpen] = useState(false);
   const [libraryFilter, setLibraryFilter] = useState("");
+  const [soloLayerId, setSoloLayerId] = useState<string | null>(null);
 
   const cloneElements = useCallback((value: DiagramElement[]): DiagramElement[] => {
     if (typeof structuredClone === "function") {
@@ -2997,7 +2998,28 @@ export function EditorSurface({
     );
   };
 
-  const handleToggleLayerVisibility = (layerId: string) => {
+  const getLayerOpacity = useCallback(
+    (layerId: string): number => {
+      if (!soloLayerId) {
+        return 1;
+      }
+      return soloLayerId === layerId ? 1 : 0.2;
+    },
+    [soloLayerId],
+  );
+
+  const handleToggleLayerVisibility = (
+    layerId: string,
+    event?: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    if (soloLayerId) {
+      setSoloLayerId(null);
+      return;
+    }
+    if (event?.altKey) {
+      setSoloLayerId(layerId);
+      return;
+    }
     updateLayers((current) =>
       current.map((layer) =>
         layer.id === layerId ? { ...layer, visible: !layer.visible } : layer,
@@ -3474,7 +3496,7 @@ export function EditorSurface({
               return (
                 <li
                   key={layer.id}
-                  className="layer-row"
+                  className={soloLayerId === layer.id ? "layer-row solo-layer" : "layer-row"}
                   draggable
                   onDragStart={() => {
                     draggedLayerIdRef.current = layer.id;
@@ -3515,7 +3537,7 @@ export function EditorSurface({
                   <button
                     type="button"
                     aria-label={`Toggle visibility ${layer.name}`}
-                    onClick={() => handleToggleLayerVisibility(layer.id)}
+                    onClick={(event) => handleToggleLayerVisibility(layer.id, event)}
                   >
                     {layer.visible ? "Hide" : "Show"}
                   </button>
@@ -4026,6 +4048,7 @@ export function EditorSurface({
               transform: `rotate(${element.rotation ?? 0}deg)`,
               transformOrigin: "center",
               cursor: isSelected ? (dragMode === "rotate" ? "grabbing" : "move") : "pointer",
+              opacity: getLayerOpacity(layerByIndex.get(element.layer ?? 0)?.id ?? ""),
             };
 
             if (element.kind === "line") {
@@ -4070,6 +4093,7 @@ export function EditorSurface({
                     width: `${canvasWidth}px`,
                     height: `${canvasHeight}px`,
                     overflow: "visible",
+                    opacity: getLayerOpacity(layerByIndex.get(element.layer ?? 0)?.id ?? ""),
                   }}
                 >
                   <polyline
@@ -4120,6 +4144,7 @@ export function EditorSurface({
                     transform: `rotate(${element.rotation ?? 0}deg)`,
                     transformOrigin: "center",
                     cursor: isSelected ? (dragMode === "rotate" ? "grabbing" : "move") : "pointer",
+                    opacity: getLayerOpacity(layerByIndex.get(element.layer ?? 0)?.id ?? ""),
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
@@ -4167,6 +4192,7 @@ export function EditorSurface({
                     transform: `rotate(${element.rotation ?? 0}deg)`,
                     transformOrigin: "center",
                     cursor: isSelected ? (dragMode === "rotate" ? "grabbing" : "move") : "pointer",
+                    opacity: getLayerOpacity(layerByIndex.get(element.layer ?? 0)?.id ?? ""),
                   }}
                   onDoubleClick={(event) => handleElementDoubleClick(element, event)}
                 >
