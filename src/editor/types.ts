@@ -9,6 +9,7 @@ export type DiagramElement = {
   locked?: boolean;
   color?: string;
   strokeWidth?: number;
+  styleVariant?: "filled" | "outlined" | "dashed";
   points?: Point[];
   layer?: number;
   groupId?: string;
